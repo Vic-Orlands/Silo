@@ -138,8 +138,7 @@ Build the native host, install the extension temporarily in the browser, then us
 
 ```bash
 cargo build -p silo-native-host
-SILO_VAULT_PATH="$HOME/.local/share/silo/silo.vault" \
-  sh scripts/install-native-host.sh YOUR_EXTENSION_ID
+sh scripts/install-native-host.sh YOUR_EXTENSION_ID
 ```
 
 On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker. Start the broker before using the browser extension; the extension reports whether the broker session is available. For a release build, set `SILO_NATIVE_HOST_BIN=target/release/silo-native-host` before running the installer.

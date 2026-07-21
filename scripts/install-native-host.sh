@@ -4,7 +4,6 @@ set -eu
 SILO_BIN=${SILO_NATIVE_HOST_BIN:-"$(pwd)/target/debug/silo-native-host"}
 EXTENSION_ID=${1:-YOUR_EXTENSION_ID}
 BROWSER=${2:-chrome}
-VAULT_PATH=${SILO_VAULT_PATH:-"$HOME/.local/share/silo/silo.vault"}
 HOST_NAME=com.silo.native
 
 case "$(uname -s):$BROWSER" in
@@ -19,10 +18,10 @@ esac
 
 mkdir -p "$HOST_DIR"
 LAUNCHER="$HOST_DIR/silo-native-host-launcher"
-python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$EXTENSION_ID" "$VAULT_PATH" "$LAUNCHER" "$BROWSER" <<'PY'
+python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$EXTENSION_ID" "$LAUNCHER" "$BROWSER" <<'PY'
 import json, pathlib, sys
-output, binary, extension_id, vault, launcher, browser = sys.argv[1:]
-pathlib.Path(launcher).write_text(f'#!/usr/bin/env sh\nexec {json.dumps(str(pathlib.Path(binary).expanduser().resolve()))} --vault {json.dumps(str(pathlib.Path(vault).expanduser().resolve()))}\n')
+output, binary, extension_id, launcher, browser = sys.argv[1:]
+pathlib.Path(launcher).write_text(f'#!/usr/bin/env sh\nexec {json.dumps(str(pathlib.Path(binary).expanduser().resolve()))}\n')
 pathlib.Path(launcher).chmod(0o700)
 manifest = {
     "name": "com.silo.native",
@@ -39,4 +38,4 @@ PY
 
 echo "Installed $HOST_NAME for Chromium at $HOST_DIR"
 echo "Browser: $BROWSER"
-echo "Vault path: $VAULT_PATH"
+echo "Start the Silo broker separately with the vault you want to use."
