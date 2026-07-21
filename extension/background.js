@@ -30,7 +30,7 @@ function requestNative(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "get_login" && message.type !== "get_otp") return;
+  if (message.type !== "get_login" && message.type !== "get_otp" && message.type !== "unlock") return;
   requestNative(message)
     .then(sendResponse)
     .catch((error) => sendResponse({ ok: false, error: String(error) }));

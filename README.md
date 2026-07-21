@@ -132,7 +132,7 @@ SILO_VAULT_PATH="$HOME/.local/share/silo/silo.vault" \
   sh scripts/install-native-host.sh YOUR_EXTENSION_ID
 ```
 
-On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host keeps one browser connection alive for its process lifetime, but it still prompts for the vault password in the launching environment. A desktop unlock broker is still required for a polished production release.
+On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host starts locked, keeps one browser connection alive for its process lifetime, and is unlocked from the extension popup for the current session. The popup clears the password field immediately after sending it; it is not persisted by the extension.
 
 Rust concepts to notice:
 

@@ -1,10 +1,11 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use silo_core::load_vault;
+use silo_core::{load_vault, Vault};
 use std::{
     io::{self, Read, Write},
     path::PathBuf,
 };
+use zeroize::Zeroize;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -19,6 +20,8 @@ struct Args {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 enum Request {
+    #[serde(rename = "unlock")]
+    Unlock { password: String },
     #[serde(rename = "get_login")]
     GetLogin { url: String },
     #[serde(rename = "get_otp")]
@@ -41,9 +44,7 @@ struct Response<'a> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let vault_path = args.vault.unwrap_or_else(default_vault_path);
-    eprintln!("Silo native host: unlock the vault to enable browser autofill.");
-    let password = rpassword::prompt_password("Vault password: ")?;
-    let vault = load_vault(&vault_path, &password)?;
+    let mut vault: Option<Vault> = None;
     let mut input = io::stdin();
     let mut output = io::stdout();
 
@@ -68,56 +69,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        let response = match request {
-            Request::GetLogin { url } => match vault.find_for_url(&url) {
-                Some(entry) => Response {
-                    ok: true,
-                    username: Some(&entry.username),
-                    password: Some(entry.password.as_str()),
-                    otp: None,
-                    error: None,
-                },
-                None => Response {
-                    ok: false,
-                    username: None,
-                    password: None,
-                    otp: None,
-                    error: Some("no matching login"),
-                },
-            },
-            Request::GetOtp { url } => match vault.find_for_url(&url) {
-                Some(entry) => match entry
-                    .totp_secret
-                    .as_ref()
-                    .and_then(|secret| silo_core::generate_totp(secret.as_str(), now()).ok())
-                {
-                    Some(otp) => Response {
-                        ok: true,
-                        username: None,
-                        password: None,
-                        otp: Some(otp),
-                        error: None,
+        let response =
+            match request {
+                Request::Unlock { mut password } => {
+                    let result = load_vault(&vault_path, &password);
+                    password.zeroize();
+                    match result {
+                        Ok(loaded) => {
+                            vault = Some(loaded);
+                            Response {
+                                ok: true,
+                                username: None,
+                                password: None,
+                                otp: None,
+                                error: None,
+                            }
+                        }
+                        Err(_) => Response {
+                            ok: false,
+                            username: None,
+                            password: None,
+                            otp: None,
+                            error: Some("could not unlock vault"),
+                        },
+                    }
+                }
+                Request::GetLogin { url } => match vault.as_ref() {
+                    Some(vault) => match vault.find_for_url(&url) {
+                        Some(entry) => Response {
+                            ok: true,
+                            username: Some(&entry.username),
+                            password: Some(entry.password.as_str()),
+                            otp: None,
+                            error: None,
+                        },
+                        None => Response {
+                            ok: false,
+                            username: None,
+                            password: None,
+                            otp: None,
+                            error: Some("no matching login"),
+                        },
                     },
-                    None => Response {
-                        ok: false,
-                        username: None,
-                        password: None,
-                        otp: None,
-                        error: Some("no TOTP secret"),
+                    None => locked_response(),
+                },
+                Request::GetOtp { url } => match vault.as_ref() {
+                    Some(vault) => match vault.find_for_url(&url) {
+                        Some(entry) => match entry.totp_secret.as_ref().and_then(|secret| {
+                            silo_core::generate_totp(secret.as_str(), now()).ok()
+                        }) {
+                            Some(otp) => Response {
+                                ok: true,
+                                username: None,
+                                password: None,
+                                otp: Some(otp),
+                                error: None,
+                            },
+                            None => Response {
+                                ok: false,
+                                username: None,
+                                password: None,
+                                otp: None,
+                                error: Some("no TOTP secret"),
+                            },
+                        },
+                        None => Response {
+                            ok: false,
+                            username: None,
+                            password: None,
+                            otp: None,
+                            error: Some("no matching login"),
+                        },
                     },
+                    None => locked_response(),
                 },
-                None => Response {
-                    ok: false,
-                    username: None,
-                    password: None,
-                    otp: None,
-                    error: Some("no matching login"),
-                },
-            },
-        };
+            };
         write_message(&mut output, &serde_json::to_vec(&response)?)?;
     }
     Ok(())
+}
+
+fn locked_response<'a>() -> Response<'a> {
+    Response {
+        ok: false,
+        username: None,
+        password: None,
+        otp: None,
+        error: Some("vault is locked; unlock Silo first"),
+    }
 }
 
 fn default_vault_path() -> PathBuf {
