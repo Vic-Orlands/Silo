@@ -1,7 +1,8 @@
-async function requestLogin() {
+async function requestLogin(entryId = null) {
   const response = await chrome.runtime.sendMessage({
     type: "get_login",
-    url: window.location.href
+    url: window.location.href,
+    entry_id: entryId
   });
   if (!response || !response.ok) return response || { ok: false, error: "No matching entry." };
 
@@ -20,10 +21,11 @@ async function requestLogin() {
   return { ok: true };
 }
 
-async function requestOtp() {
+async function requestOtp(entryId = null) {
   const response = await chrome.runtime.sendMessage({
     type: "get_otp",
-    url: window.location.href
+    url: window.location.href,
+    entry_id: entryId
   });
   if (!response || !response.ok || !response.otp) return response || { ok: false, error: "No TOTP available." };
   const otp = document.querySelector('input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[inputmode="numeric"]');
@@ -36,11 +38,11 @@ async function requestOtp() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "fill") {
-    requestLogin().then(sendResponse);
+    requestLogin(message.entryId || null).then(sendResponse);
     return true;
   }
   if (message.type === "fill_otp") {
-    requestOtp().then(sendResponse);
+    requestOtp(message.entryId || null).then(sendResponse);
     return true;
   }
 });

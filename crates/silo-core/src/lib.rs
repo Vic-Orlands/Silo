@@ -141,16 +141,35 @@ impl Vault {
     }
 
     pub fn find_for_url(&self, current_url: &str) -> Option<&Entry> {
-        let current_host = Url::parse(current_url).ok()?.host_str()?.to_lowercase();
-        self.entries.iter().find(|entry| {
-            let Some(entry_host) = Url::parse(&entry.url)
-                .ok()
-                .and_then(|url| url.host_str().map(str::to_lowercase))
-            else {
-                return false;
-            };
-            current_host == entry_host || current_host.ends_with(&format!(".{entry_host}"))
-        })
+        self.find_all_for_url(current_url).into_iter().next()
+    }
+
+    pub fn find_all_for_url(&self, current_url: &str) -> Vec<&Entry> {
+        let Some(current) = Url::parse(current_url).ok() else {
+            return Vec::new();
+        };
+        let current_scheme = current.scheme().to_ascii_lowercase();
+        let Some(current_host) = current.host_str().map(str::to_lowercase) else {
+            return Vec::new();
+        };
+        let current_port = current.port_or_known_default();
+        self.entries
+            .iter()
+            .filter(|entry| {
+                let Ok(entry_url) = Url::parse(&entry.url) else {
+                    return false;
+                };
+                let Some(entry_host) = entry_url.host_str().map(str::to_lowercase) else {
+                    return false;
+                };
+                let scheme_matches = current_scheme == entry_url.scheme().to_ascii_lowercase();
+                let port_matches = current_port == entry_url.port_or_known_default();
+                scheme_matches
+                    && port_matches
+                    && (current_host == entry_host
+                        || current_host.ends_with(&format!(".{entry_host}")))
+            })
+            .collect()
     }
 }
 

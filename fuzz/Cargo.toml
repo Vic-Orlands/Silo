@@ -1,0 +1,26 @@
+[package]
+name = "silo-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+silo-core = { path = "../crates/silo-core" }
+
+[[bin]]
+name = "totp_input"
+path = "fuzz_targets/totp_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vault_file"
+path = "fuzz_targets/vault_file.rs"
+test = false
+doc = false
+bench = false

@@ -1,11 +1,15 @@
 [package]
-name = "silo-native-host"
+name = "silo-broker"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 clap.workspace = true
+rand.workspace = true
+rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+silo-core = { path = "../silo-core" }
+time.workspace = true
 zeroize.workspace = true

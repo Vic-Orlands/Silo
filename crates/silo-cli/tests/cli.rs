@@ -8,7 +8,7 @@ fn help_describes_the_primary_commands() {
         .unwrap();
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    for command in ["init", "shell", "otp-check", "import", "export"] {
+    for command in ["init", "shell", "broker", "otp-check", "import", "export"] {
         assert!(help.contains(command), "missing {command} in help output");
     }
 }

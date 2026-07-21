@@ -94,30 +94,6 @@
       font: italic 11px ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
-    .unlock {
-      display: flex;
-      gap: 6px;
-    }
-
-    input {
-      min-width: 0;
-      flex: 1;
-      height: 30px;
-      padding: 0 9px;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      outline: none;
-      background: var(--surface);
-      color: var(--ink);
-      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-      transition: border-color 140ms ease, background 140ms ease;
-    }
-
-    input:focus {
-      border-color: rgba(184, 242, 203, .6);
-      background: var(--surface-raised);
-    }
-
     button {
       height: 30px;
       padding: 0 11px;
@@ -138,7 +114,7 @@
     .actions {
       display: grid;
       gap: 6px;
-      margin-top: 18px;
+      margin-top: 14px;
     }
 
     .action {
@@ -160,6 +136,47 @@
     }
 
     .action.secondary { color: var(--mint); }
+
+    .session-action {
+      width: 100%;
+      margin-top: 2px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .session-action:hover { background: var(--surface); color: var(--ink); }
+
+    #matches {
+      display: grid;
+      gap: 4px;
+      margin-top: 9px;
+    }
+
+    .match {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 27px;
+      padding: 0 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 400;
+      text-align: left;
+    }
+
+    .match:hover, .match.selected { background: var(--surface); color: var(--ink); }
+
+    .match small {
+      max-width: 125px;
+      overflow: hidden;
+      color: var(--faint);
+      font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     #status {
       min-height: 17px;
@@ -191,12 +208,10 @@
   </header>
 
   <main>
-    <p class="intro">Unlock for this session, then choose exactly what Silo should fill.</p>
+    <p id="site" class="intro">Silo stays local. Unlock the broker in the Silo app, then choose exactly what to fill.</p>
     <p class="section-label">// session access</p>
-    <div class="unlock">
-      <input id="password" type="password" autocomplete="current-password" placeholder="Silo password" aria-label="Silo password">
-      <button id="unlock">Unlock</button>
-    </div>
+    <button id="refresh" class="session-action">Check Silo session ↗</button>
+    <div id="matches" aria-label="Matching logins"></div>
 
     <div class="actions" aria-label="Fill actions">
       <button id="login" class="action"><span>Fill login</span><span>username + password</span></button>
@@ -205,7 +220,7 @@
     <div id="status" role="status" aria-live="polite"></div>
   </main>
 
-  <footer>nothing is filled automatically</footer>
+  <footer>nothing is filled automatically · no password stored here</footer>
   <script src="popup.js"></script>
 </body>
 </html>

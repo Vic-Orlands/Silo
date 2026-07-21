@@ -23,6 +23,14 @@ fn encrypted_vault_supports_add_find_and_remove() {
         loaded.find("github").unwrap().password.as_str(),
         "correct horse battery staple"
     );
+    assert!(loaded.find_for_url("https://github.com/login").is_some());
+    assert!(loaded
+        .find_for_url("https://gist.github.com/example")
+        .is_some());
+    assert!(loaded.find_for_url("http://github.com/login").is_none());
+    assert!(loaded
+        .find_for_url("https://github.com.evil.example")
+        .is_none());
     assert!(loaded.remove("github").is_some());
     assert!(loaded.entries.is_empty());
     fs::remove_file(path).unwrap();

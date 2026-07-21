@@ -1,6 +1,6 @@
 # Silo
 
-Silo is a learning project for building a local-first password manager from scratch. The command-line interface is the primary product. The browser bridge exists only as an early experiment and is not the focus yet.
+Silo is a learning project for building a local-first password manager from scratch. The command-line interface and local browser bridge are the primary product surfaces.
 
 ## Start here
 
@@ -45,6 +45,7 @@ silo remove <name>                Delete an entry after confirmation
 silo remove <name> --yes          Delete without confirmation
 silo generate                     Generate a password without saving it
 silo shell                        Unlock once and work interactively
+silo broker                       Unlock a local browser session broker
 silo copy <name> password          Copy a secret and clear it later
 silo export <file>                Export plaintext JSON deliberately
 silo import <file>                Import plaintext JSON into the vault
@@ -58,6 +59,14 @@ The shell is a full-screen terminal workspace with a quiet editorial language: n
 cargo run -p silo -- shell
 cargo run -p silo -- shell --timeout 300
 ```
+
+To enable browser autofill, keep the local broker running in a separate terminal:
+
+```bash
+cargo run -p silo -- --vault /tmp/silo-test/test.vault broker --timeout 900
+```
+
+The broker owns the unlocked vault session. Type `lock` to clear it or `q` to stop the broker. The browser extension only receives approved login/TOTP results; the master password is not entered into or stored by the browser extension.
 
 Inside the shell:
 
@@ -119,6 +128,7 @@ It reports the source format, algorithm, digit count, period, decoded byte lengt
 
 - `crates/silo-core`: data structures, encryption, vault file format, URL matching, and TOTP.
 - `crates/silo-cli`: command parsing, prompts, and user-facing behavior.
+- `crates/silo-broker`: unlocked local session, timeout, lock, and browser request policy.
 - `crates/silo-native-host`: native messaging bridge process.
 - `extension`: browser bridge with explicit popup actions for login and one-time-code filling.
 
@@ -132,7 +142,7 @@ SILO_VAULT_PATH="$HOME/.local/share/silo/silo.vault" \
   sh scripts/install-native-host.sh YOUR_EXTENSION_ID
 ```
 
-On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host starts locked, keeps one browser connection alive for its process lifetime, and is unlocked from the extension popup for the current session. The popup clears the password field immediately after sending it; it is not persisted by the extension.
+On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker. Start the broker before using the browser extension; the extension reports whether the broker session is available. For a release build, set `SILO_NATIVE_HOST_BIN=target/release/silo-native-host` before running the installer.
 
 Rust concepts to notice:
 
@@ -150,5 +160,7 @@ cargo fmt --all
 cargo test --workspace
 cargo run -p silo -- --help
 ```
+
+The same checks are available through `sh scripts/verify.sh`. Optional fuzz targets live in `fuzz/` and require `cargo-fuzz`.
 
 This remains an educational prototype, not an audited password manager. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.

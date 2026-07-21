@@ -1,8 +1,9 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use silo_core::{load_vault, Vault};
 use std::{
+    fs,
     io::{self, Read, Write},
+    net::TcpStream,
     path::PathBuf,
 };
 use zeroize::Zeroize;
@@ -14,174 +15,167 @@ use zeroize::Zeroize;
 )]
 struct Args {
     #[arg(short, long)]
-    vault: Option<PathBuf>,
+    _vault: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 enum Request {
-    #[serde(rename = "unlock")]
-    Unlock { password: String },
+    #[serde(rename = "status")]
+    Status,
+    #[serde(rename = "get_matches")]
+    GetMatches { url: String },
     #[serde(rename = "get_login")]
-    GetLogin { url: String },
+    GetLogin {
+        url: String,
+        #[serde(default)]
+        entry_id: Option<String>,
+    },
     #[serde(rename = "get_otp")]
     GetOtp { url: String },
 }
 
 #[derive(Debug, Serialize)]
-struct Response<'a> {
+struct Response {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    username: Option<&'a str>,
+    username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    password: Option<&'a str>,
+    password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     otp: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<&'a str>,
+    matches: Option<Vec<MatchItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unlocked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+impl Drop for Response {
+    fn drop(&mut self) {
+        if let Some(mut value) = self.username.take() {
+            value.zeroize();
+        }
+        if let Some(mut value) = self.password.take() {
+            value.zeroize();
+        }
+        if let Some(mut value) = self.otp.take() {
+            value.zeroize();
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct MatchItem {
+    id: String,
+    name: String,
+    username: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrokerResponse {
+    ok: bool,
+    username: Option<String>,
+    password: Option<String>,
+    otp: Option<String>,
+    matches: Option<Vec<MatchItem>>,
+    unlocked: Option<bool>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrokerState {
+    address: String,
+    token: String,
+}
+
+#[derive(Debug, Serialize)]
+struct Envelope<'a> {
+    token: &'a str,
+    request: &'a Request,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-    let vault_path = args.vault.unwrap_or_else(default_vault_path);
-    let mut vault: Option<Vault> = None;
+    let _ = Args::parse();
     let mut input = io::stdin();
     let mut output = io::stdout();
-
     loop {
         let Some(message) = read_message(&mut input)? else {
             break;
         };
-        let request: Request = match serde_json::from_slice(&message) {
-            Ok(request) => request,
-            Err(_) => {
-                write_message(
-                    &mut output,
-                    &serde_json::to_vec(&Response {
-                        ok: false,
-                        username: None,
-                        password: None,
-                        otp: None,
-                        error: Some("invalid request"),
-                    })?,
-                )?;
-                continue;
-            }
+        let response = match serde_json::from_slice::<Request>(&message) {
+            Ok(request) => request_broker(&request),
+            Err(_) => error_response("invalid request"),
         };
-
-        let response =
-            match request {
-                Request::Unlock { mut password } => {
-                    let result = load_vault(&vault_path, &password);
-                    password.zeroize();
-                    match result {
-                        Ok(loaded) => {
-                            vault = Some(loaded);
-                            Response {
-                                ok: true,
-                                username: None,
-                                password: None,
-                                otp: None,
-                                error: None,
-                            }
-                        }
-                        Err(_) => Response {
-                            ok: false,
-                            username: None,
-                            password: None,
-                            otp: None,
-                            error: Some("could not unlock vault"),
-                        },
-                    }
-                }
-                Request::GetLogin { url } => match vault.as_ref() {
-                    Some(vault) => match vault.find_for_url(&url) {
-                        Some(entry) => Response {
-                            ok: true,
-                            username: Some(&entry.username),
-                            password: Some(entry.password.as_str()),
-                            otp: None,
-                            error: None,
-                        },
-                        None => Response {
-                            ok: false,
-                            username: None,
-                            password: None,
-                            otp: None,
-                            error: Some("no matching login"),
-                        },
-                    },
-                    None => locked_response(),
-                },
-                Request::GetOtp { url } => match vault.as_ref() {
-                    Some(vault) => match vault.find_for_url(&url) {
-                        Some(entry) => match entry.totp_secret.as_ref().and_then(|secret| {
-                            silo_core::generate_totp(secret.as_str(), now()).ok()
-                        }) {
-                            Some(otp) => Response {
-                                ok: true,
-                                username: None,
-                                password: None,
-                                otp: Some(otp),
-                                error: None,
-                            },
-                            None => Response {
-                                ok: false,
-                                username: None,
-                                password: None,
-                                otp: None,
-                                error: Some("no TOTP secret"),
-                            },
-                        },
-                        None => Response {
-                            ok: false,
-                            username: None,
-                            password: None,
-                            otp: None,
-                            error: Some("no matching login"),
-                        },
-                    },
-                    None => locked_response(),
-                },
-            };
         write_message(&mut output, &serde_json::to_vec(&response)?)?;
     }
     Ok(())
 }
 
-fn locked_response<'a>() -> Response<'a> {
+fn request_broker(request: &Request) -> Response {
+    let state_path = broker_state_path();
+    let state = match fs::read(&state_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<BrokerState>(&bytes).ok())
+    {
+        Some(state) => state,
+        None => return error_response("Silo broker unavailable; run silo broker first"),
+    };
+    let mut stream = match TcpStream::connect(&state.address) {
+        Ok(stream) => stream,
+        Err(_) => return error_response("Silo broker is not running"),
+    };
+    let envelope = match serde_json::to_vec(&Envelope {
+        token: &state.token,
+        request,
+    }) {
+        Ok(envelope) => envelope,
+        Err(_) => return error_response("could not encode broker request"),
+    };
+    if write_message(&mut stream, &envelope).is_err() {
+        return error_response("could not contact Silo broker");
+    }
+    let Some(response) = read_message(&mut stream).ok().flatten() else {
+        return error_response("Silo broker returned no response");
+    };
+    match serde_json::from_slice::<BrokerResponse>(&response) {
+        Ok(mut response) => Response {
+            ok: response.ok,
+            username: response.username.take(),
+            password: response.password.take(),
+            otp: response.otp.take(),
+            matches: response.matches.take(),
+            unlocked: response.unlocked,
+            error: response.error.take(),
+        },
+        Err(_) => error_response("invalid Silo broker response"),
+    }
+}
+
+fn error_response(error: &str) -> Response {
     Response {
         ok: false,
         username: None,
         password: None,
         otp: None,
-        error: Some("vault is locked; unlock Silo first"),
+        matches: None,
+        unlocked: None,
+        error: Some(error.into()),
     }
 }
 
-fn default_vault_path() -> PathBuf {
-    if let Ok(path) = std::env::var("SILO_VAULT_PATH") {
-        return PathBuf::from(path);
-    }
-    #[cfg(target_os = "macos")]
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join("Library/Application Support/Silo/silo.vault");
-    }
-    #[cfg(target_os = "windows")]
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        return PathBuf::from(local_app_data).join("Silo/silo.vault");
+fn broker_state_path() -> PathBuf {
+    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
+        return PathBuf::from(runtime).join("silo-broker.json");
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".local/share/silo/silo.vault");
+        #[cfg(target_os = "macos")]
+        return PathBuf::from(home).join("Library/Application Support/Silo/broker.json");
+        #[cfg(not(target_os = "macos"))]
+        return PathBuf::from(home).join(".local/state/silo/broker.json");
     }
-    PathBuf::from("silo.vault")
-}
-
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    PathBuf::from("silo-broker.json")
 }
 
 fn read_message(input: &mut impl Read) -> io::Result<Option<Vec<u8>>> {

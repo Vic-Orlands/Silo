@@ -3,7 +3,7 @@
   "name": "Silo Browser Bridge",
   "version": "0.1.0",
   "description": "Autofill credentials from the local Silo native host.",
-  "permissions": ["nativeMessaging"],
+  "permissions": ["activeTab", "nativeMessaging"],
   "background": {
     "service_worker": "background.js"
   },

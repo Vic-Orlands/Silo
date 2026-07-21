@@ -3,30 +3,40 @@ set -eu
 
 SILO_BIN=${SILO_NATIVE_HOST_BIN:-"$(pwd)/target/debug/silo-native-host"}
 EXTENSION_ID=${1:-YOUR_EXTENSION_ID}
+BROWSER=${2:-chrome}
 VAULT_PATH=${SILO_VAULT_PATH:-"$HOME/.local/share/silo/silo.vault"}
 HOST_NAME=com.silo.native
 
-case "$(uname -s)" in
-  Darwin) HOST_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts" ;;
-  Linux) HOST_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/google-chrome/NativeMessagingHosts" ;;
+case "$(uname -s):$BROWSER" in
+  Darwin:firefox) HOST_DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" ;;
+  Darwin:chromium) HOST_DIR="$HOME/Library/Application Support/Chromium/NativeMessagingHosts" ;;
+  Darwin:*) HOST_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts" ;;
+  Linux:firefox) HOST_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts" ;;
+  Linux:chromium) HOST_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/chromium/NativeMessagingHosts" ;;
+  Linux:*) HOST_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/google-chrome/NativeMessagingHosts" ;;
   *) echo "Use scripts/install-native-host.ps1 on Windows." >&2; exit 1 ;;
 esac
 
 mkdir -p "$HOST_DIR"
 LAUNCHER="$HOST_DIR/silo-native-host-launcher"
-python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$EXTENSION_ID" "$VAULT_PATH" "$LAUNCHER" <<'PY'
+python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$EXTENSION_ID" "$VAULT_PATH" "$LAUNCHER" "$BROWSER" <<'PY'
 import json, pathlib, sys
-output, binary, extension_id, vault, launcher = sys.argv[1:]
+output, binary, extension_id, vault, launcher, browser = sys.argv[1:]
 pathlib.Path(launcher).write_text(f'#!/usr/bin/env sh\nexec {json.dumps(str(pathlib.Path(binary).expanduser().resolve()))} --vault {json.dumps(str(pathlib.Path(vault).expanduser().resolve()))}\n')
 pathlib.Path(launcher).chmod(0o700)
-pathlib.Path(output).write_text(json.dumps({
+manifest = {
     "name": "com.silo.native",
     "description": "Silo native messaging host",
     "path": str(pathlib.Path(launcher).expanduser().resolve()),
     "type": "stdio",
-    "allowed_origins": [f"chrome-extension://{extension_id}/"]
-}, indent=2) + "\n")
+}
+if browser == "firefox":
+    manifest["allowed_extensions"] = [extension_id]
+else:
+    manifest["allowed_origins"] = [f"chrome-extension://{extension_id}/"]
+pathlib.Path(output).write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 
 echo "Installed $HOST_NAME for Chromium at $HOST_DIR"
+echo "Browser: $BROWSER"
 echo "Vault path: $VAULT_PATH"

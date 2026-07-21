@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host"]
+members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host", "crates/silo-broker"]
 resolver = "2"
 
 [workspace.package]

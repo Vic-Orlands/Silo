@@ -35,6 +35,10 @@ enum Command {
         #[arg(long, default_value_t = 900)]
         timeout: u64,
     },
+    Broker {
+        #[arg(long, default_value_t = 900)]
+        timeout: u64,
+    },
     Add {
         name: String,
         #[arg(long)]
@@ -137,6 +141,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Command::Init => init(&cli.vault)?,
         Command::Shell { timeout } => run_shell(&cli.vault, timeout)?,
+        Command::Broker { timeout } => silo_broker::run_with_config(cli.vault, timeout)?,
         Command::Add {
             name,
             url,
