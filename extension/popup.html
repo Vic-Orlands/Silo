@@ -5,24 +5,207 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Silo</title>
   <style>
-    :root { color-scheme: dark; }
-    body { width: 220px; margin: 0; padding: 18px; background: #080808; color: #f5f5f5; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    h1 { margin: 0 0 4px; font: 700 18px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
-    p { margin: 0 0 18px; color: #929292; line-height: 1.45; }
-    button { width: 100%; margin-top: 8px; padding: 10px 12px; border: 0; border-radius: 6px; background: #e9f7ef; color: #0c2416; font-weight: 600; cursor: pointer; }
-    button.secondary { background: #1b1b1b; color: #e9f7ef; }
-    input { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #292929; border-radius: 6px; background: #111; color: #f5f5f5; }
-    #status { min-height: 18px; margin-top: 12px; color: #929292; }
+    :root {
+      color-scheme: dark;
+      --canvas: #090909;
+      --surface: #111211;
+      --surface-raised: #171817;
+      --ink: #f3f5f2;
+      --muted: #8f9690;
+      --faint: #59605b;
+      --line: rgba(232, 241, 234, .12);
+      --mint: #b8f2cb;
+      --mint-ink: #0a1b10;
+      --danger: #ff9b82;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      width: 276px;
+      margin: 0;
+      padding: 16px;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .mark {
+      color: var(--mint);
+      font: 700 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    h1 {
+      margin: 0;
+      font: 700 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .08em;
+    }
+
+    .eyebrow {
+      margin: 4px 0 0;
+      color: var(--faint);
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .session {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .session::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--faint);
+      content: "";
+    }
+
+    main { padding-top: 15px; }
+
+    .intro {
+      margin: 0 0 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .section-label {
+      margin: 0 0 6px;
+      color: var(--faint);
+      font: italic 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .unlock {
+      display: flex;
+      gap: 6px;
+    }
+
+    input {
+      min-width: 0;
+      flex: 1;
+      height: 30px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      outline: none;
+      background: var(--surface);
+      color: var(--ink);
+      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    input:focus {
+      border-color: rgba(184, 242, 203, .6);
+      background: var(--surface-raised);
+    }
+
+    button {
+      height: 30px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 5px;
+      background: var(--mint);
+      color: var(--mint-ink);
+      font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      cursor: pointer;
+      transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+    }
+
+    button:hover { background: #d2f8dc; }
+    button:active { transform: translateY(1px); }
+    button:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+    button:disabled { cursor: wait; opacity: .55; }
+
+    .actions {
+      display: grid;
+      gap: 6px;
+      margin-top: 18px;
+    }
+
+    .action {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 0 10px;
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+    }
+
+    .action:hover { background: var(--surface-raised); }
+
+    .action span:last-child {
+      color: var(--faint);
+      font: italic 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .action.secondary { color: var(--mint); }
+
+    #status {
+      min-height: 17px;
+      margin: 12px 1px 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    #status.success { color: var(--mint); }
+    #status.error { color: var(--danger); }
+
+    footer {
+      margin-top: 13px;
+      color: var(--faint);
+      font: italic 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
   </style>
 </head>
 <body>
-  <h1>SILO</h1>
-  <p>Private vault. Unlock for this session, then choose what to fill.</p>
-  <input id="password" type="password" autocomplete="current-password" placeholder="Silo password" aria-label="Silo password">
-  <button id="unlock">Unlock Silo</button>
-  <button id="login">Fill login</button>
-  <button id="otp" class="secondary">Fill one-time code</button>
-  <div id="status" role="status"></div>
+  <header>
+    <div class="brand">
+      <span class="mark">▌</span>
+      <div>
+        <h1>SILO</h1>
+        <p class="eyebrow">private browser bridge</p>
+      </div>
+    </div>
+    <span class="session">local</span>
+  </header>
+
+  <main>
+    <p class="intro">Unlock for this session, then choose exactly what Silo should fill.</p>
+    <p class="section-label">// session access</p>
+    <div class="unlock">
+      <input id="password" type="password" autocomplete="current-password" placeholder="Silo password" aria-label="Silo password">
+      <button id="unlock">Unlock</button>
+    </div>
+
+    <div class="actions" aria-label="Fill actions">
+      <button id="login" class="action"><span>Fill login</span><span>username + password</span></button>
+      <button id="otp" class="action secondary"><span>Fill one-time code</span><span>TOTP</span></button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+  </main>
+
+  <footer>nothing is filled automatically</footer>
   <script src="popup.js"></script>
 </body>
 </html>
