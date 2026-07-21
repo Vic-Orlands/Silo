@@ -7,7 +7,11 @@ use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha1::Sha1;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
@@ -15,7 +19,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const MAGIC: &[u8; 8] = b"SILO\0\0\0\0";
 const LEGACY_MAGIC: &[u8; 8] = b"UZOPASS\0";
-const FORMAT_VERSION: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
+const LEGACY_FORMAT_VERSION: u8 = 1;
 const SALT_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 24;
 
@@ -39,6 +44,17 @@ pub enum Error {
     UnsupportedTotpPeriod,
     #[error("Google Authenticator migration QR data is not an individual TOTP secret; use the account's setup secret or export accounts individually")]
     UnsupportedTotpMigration,
+    #[error("TOTP secret is valid, but its configuration is unsupported: {0}")]
+    UnsupportedTotpConfiguration(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TotpMetadata {
+    pub source: &'static str,
+    pub algorithm: &'static str,
+    pub digits: u8,
+    pub period: u64,
+    pub secret_bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
@@ -139,28 +155,30 @@ impl Vault {
 }
 
 pub fn save_vault(path: impl AsRef<Path>, vault: &Vault, password: &str) -> Result<(), Error> {
-    let plaintext = serde_json::to_vec(vault)?;
+    let plaintext = Zeroizing::new(serde_json::to_vec(vault)?);
     let mut salt = [0u8; SALT_LENGTH];
     let mut nonce = [0u8; NONCE_LENGTH];
     OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut nonce);
 
-    let key = derive_key(password.as_bytes(), &salt)?;
+    let key = derive_key(password.as_bytes(), &salt, 64 * 1024, 3, 1)?;
     let cipher = XChaCha20Poly1305::new((&*key).into());
     let ciphertext = cipher
         .encrypt(XNonce::from_slice(&nonce), plaintext.as_ref())
         .map_err(|_| Error::InvalidPasswordOrVault)?;
 
     let mut bytes =
-        Vec::with_capacity(MAGIC.len() + 1 + SALT_LENGTH + NONCE_LENGTH + ciphertext.len());
+        Vec::with_capacity(MAGIC.len() + 1 + 12 + SALT_LENGTH + NONCE_LENGTH + ciphertext.len());
     bytes.extend_from_slice(MAGIC);
     bytes.push(FORMAT_VERSION);
+    bytes.extend_from_slice(&(64 * 1024u32).to_le_bytes());
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&salt);
     bytes.extend_from_slice(&nonce);
     bytes.extend_from_slice(&ciphertext);
 
-    fs::write(&path, bytes)?;
-    set_private_permissions(path.as_ref())?;
+    atomic_write(path.as_ref(), &bytes)?;
     Ok(())
 }
 
@@ -171,22 +189,51 @@ pub fn load_vault(path: impl AsRef<Path>, password: &str) -> Result<Vault, Error
     {
         return Err(Error::UnsupportedFormat);
     }
-    if bytes[MAGIC.len()] != FORMAT_VERSION {
+    let version = bytes[MAGIC.len()];
+    let (salt_start, memory_kib, iterations, parallelism) = match version {
+        LEGACY_FORMAT_VERSION => (MAGIC.len() + 1, 64 * 1024, 3, 1),
+        FORMAT_VERSION => {
+            let params_start = MAGIC.len() + 1;
+            let params_end = params_start + 12;
+            if bytes.len() < params_end {
+                return Err(Error::UnsupportedFormat);
+            }
+            (
+                params_end,
+                u32::from_le_bytes(bytes[params_start..params_start + 4].try_into().unwrap()),
+                u32::from_le_bytes(
+                    bytes[params_start + 4..params_start + 8]
+                        .try_into()
+                        .unwrap(),
+                ),
+                u32::from_le_bytes(bytes[params_start + 8..params_end].try_into().unwrap()),
+            )
+        }
+        _ => return Err(Error::UnsupportedFormat),
+    };
+    if memory_kib < 16 * 1024 || iterations == 0 || parallelism == 0 {
         return Err(Error::UnsupportedFormat);
     }
 
-    let salt_start = MAGIC.len() + 1;
     let nonce_start = salt_start + SALT_LENGTH;
     let ciphertext_start = nonce_start + NONCE_LENGTH;
     let salt = &bytes[salt_start..nonce_start];
     let nonce = &bytes[nonce_start..ciphertext_start];
     let ciphertext = &bytes[ciphertext_start..];
 
-    let key = derive_key(password.as_bytes(), salt)?;
+    let key = derive_key(
+        password.as_bytes(),
+        salt,
+        memory_kib,
+        iterations,
+        parallelism,
+    )?;
     let cipher = XChaCha20Poly1305::new((&*key).into());
-    let plaintext = cipher
-        .decrypt(XNonce::from_slice(nonce), ciphertext)
-        .map_err(|_| Error::InvalidPasswordOrVault)?;
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(XNonce::from_slice(nonce), ciphertext)
+            .map_err(|_| Error::InvalidPasswordOrVault)?,
+    );
 
     Ok(serde_json::from_slice(&plaintext)?)
 }
@@ -211,8 +258,9 @@ pub fn new_entry(
 }
 
 pub fn generate_totp(secret: &str, timestamp: u64) -> Result<String, Error> {
+    let metadata = inspect_totp(secret)?;
     let secret = extract_totp_secret(secret)?;
-    let counter = timestamp / 30;
+    let counter = timestamp / metadata.period;
     let counter_bytes = counter.to_be_bytes();
     let mut mac =
         <Hmac<Sha1> as Mac>::new_from_slice(&secret).map_err(|_| Error::InvalidTotpSecret)?;
@@ -224,6 +272,67 @@ pub fn generate_totp(secret: &str, timestamp: u64) -> Result<String, Error> {
         | (u32::from(digest[offset + 2]) << 8)
         | u32::from(digest[offset + 3]);
     Ok(format!("{:06}", binary % 1_000_000))
+}
+
+pub fn inspect_totp(value: &str) -> Result<TotpMetadata, Error> {
+    let value = value.trim();
+    if value
+        .to_ascii_lowercase()
+        .starts_with("otpauth-migration://")
+    {
+        let secret = decode_migration_secret(value)?;
+        return Ok(TotpMetadata {
+            source: "Google Authenticator migration URI (single account)",
+            algorithm: "SHA1",
+            digits: 6,
+            period: 30,
+            secret_bytes: secret.len(),
+        });
+    }
+    if !value.to_ascii_lowercase().starts_with("otpauth://") {
+        let secret = decode_base32_secret(value)?;
+        return Ok(TotpMetadata {
+            source: "raw Base32 secret",
+            algorithm: "SHA1",
+            digits: 6,
+            period: 30,
+            secret_bytes: secret.len(),
+        });
+    }
+    let uri = Url::parse(value).map_err(|_| Error::InvalidTotpSecret)?;
+    if uri.scheme() != "otpauth" || uri.host_str() != Some("totp") {
+        return Err(Error::InvalidTotpSecret);
+    }
+    let mut algorithm = "SHA1".to_string();
+    let mut digits = 6;
+    let mut period = 30;
+    let mut secret = None;
+    for (key, value) in uri.query_pairs() {
+        match key.as_ref() {
+            "secret" => secret = Some(value.into_owned()),
+            "algorithm" => algorithm = value.into_owned(),
+            "digits" => digits = value.parse().map_err(|_| Error::InvalidTotpDigits)?,
+            "period" => period = value.parse().map_err(|_| Error::UnsupportedTotpPeriod)?,
+            _ => {}
+        }
+    }
+    if !algorithm.eq_ignore_ascii_case("SHA1") {
+        return Err(Error::UnsupportedTotpAlgorithm);
+    }
+    if digits != 6 {
+        return Err(Error::InvalidTotpDigits);
+    }
+    if period != 30 {
+        return Err(Error::UnsupportedTotpPeriod);
+    }
+    let secret = decode_base32_secret(&secret.ok_or(Error::InvalidTotpSecret)?)?;
+    Ok(TotpMetadata {
+        source: "otpauth URI",
+        algorithm: "SHA1",
+        digits,
+        period,
+        secret_bytes: secret.len(),
+    })
 }
 
 fn extract_totp_secret(value: &str) -> Result<Vec<u8>, Error> {
@@ -326,11 +435,11 @@ fn decode_migration_secret(value: &str) -> Result<Vec<u8>, Error> {
         .map_err(|_| Error::InvalidTotpSecret)?;
     let payload =
         MigrationPayload::decode(data.as_slice()).map_err(|_| Error::InvalidTotpSecret)?;
-    let parameter = payload
-        .otp_parameters
-        .into_iter()
-        .next()
-        .ok_or(Error::InvalidTotpSecret)?;
+    let mut parameters = payload.otp_parameters.into_iter();
+    let parameter = parameters.next().ok_or(Error::InvalidTotpSecret)?;
+    if parameters.next().is_some() {
+        return Err(Error::UnsupportedTotpMigration);
+    }
     if parameter.algorithm != 0 && parameter.algorithm != MigrationAlgorithm::Sha1 as i32 {
         return Err(Error::UnsupportedTotpAlgorithm);
     }
@@ -343,15 +452,48 @@ fn decode_migration_secret(value: &str) -> Result<Vec<u8>, Error> {
     Ok(parameter.secret)
 }
 
-fn derive_key(password: &[u8], salt: &[u8]) -> Result<Zeroizing<[u8; 32]>, Error> {
-    let params =
-        Params::new(64 * 1024, 3, 1, Some(32)).map_err(|_| Error::InvalidPasswordOrVault)?;
+fn derive_key(
+    password: &[u8],
+    salt: &[u8],
+    memory_kib: u32,
+    iterations: u32,
+    parallelism: u32,
+) -> Result<Zeroizing<[u8; 32]>, Error> {
+    let params = Params::new(memory_kib, iterations, parallelism, Some(32))
+        .map_err(|_| Error::InvalidPasswordOrVault)?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
     argon2
         .hash_password_into(password, salt, key.as_mut())
         .map_err(|_| Error::InvalidPasswordOrVault)?;
     Ok(key)
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let mut temp = PathBuf::from(path);
+    temp.set_extension(format!("silo-tmp-{}", Uuid::new_v4()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)?;
+        set_private_permissions(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        if path.exists() {
+            let backup = path.with_extension("vault.bak");
+            let _ = fs::copy(path, backup);
+        }
+        #[cfg(windows)]
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        fs::rename(&temp, path)?;
+        set_private_permissions(path)?;
+        Ok::<(), std::io::Error>(())
+    })();
+    let _ = fs::remove_file(&temp);
+    result.map_err(Error::Io)
 }
 
 fn set_private_permissions(path: &Path) -> Result<(), std::io::Error> {
@@ -409,5 +551,43 @@ mod tests {
         let encoded = general_purpose::URL_SAFE_NO_PAD.encode(payload);
         let uri = format!("otpauth-migration://offline?data={encoded}");
         assert_eq!(generate_totp(&uri, 59).unwrap(), "996554");
+        let metadata =
+            inspect_totp("otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub")
+                .unwrap();
+        assert_eq!(metadata.source, "otpauth URI");
+        assert_eq!(metadata.algorithm, "SHA1");
+        assert_eq!(metadata.digits, 6);
+        assert_eq!(metadata.period, 30);
+        assert_eq!(metadata.secret_bytes, 10);
+    }
+
+    #[test]
+    fn save_creates_backup_and_rejects_tampering() {
+        let path = std::env::temp_dir().join(format!("silo-backup-{}.vault", Uuid::new_v4()));
+        let vault = Vault::new();
+        save_vault(&path, &vault, "master password").unwrap();
+        save_vault(&path, &vault, "master password").unwrap();
+        assert!(path.with_extension("vault.bak").exists());
+        let mut bytes = fs::read(&path).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        fs::write(&path, bytes).unwrap();
+        assert!(matches!(
+            load_vault(&path, "master password"),
+            Err(Error::InvalidPasswordOrVault)
+        ));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn malformed_vault_inputs_fail_without_panicking() {
+        for length in 0..256usize {
+            let path = std::env::temp_dir().join(format!("silo-malformed-{length}.vault"));
+            let bytes = (0..length)
+                .map(|index| ((index * 73 + 19) % 256) as u8)
+                .collect::<Vec<_>>();
+            fs::write(&path, bytes).unwrap();
+            assert!(load_vault(&path, "password").is_err());
+            let _ = fs::remove_file(path);
+        }
     }
 }

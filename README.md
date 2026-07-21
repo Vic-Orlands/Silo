@@ -38,6 +38,7 @@ silo get <name> username          Print a username
 silo get <name> password          Print a password explicitly
 silo get <name> url               Print a URL
 silo otp <name>                   Print the current six-digit TOTP code
+silo otp-check <name>             Validate TOTP setup and explain its configuration
 silo set-totp <name>              Add, replace, or clear a TOTP secret
 silo edit <name>                  Change metadata or use --password to change password
 silo remove <name>                Delete an entry after confirmation
@@ -49,7 +50,9 @@ silo export <file>                Export plaintext JSON deliberately
 silo import <file>                Import plaintext JSON into the vault
 ```
 
-The shell is a full-screen terminal workspace with a quiet editorial language: near-black canvas, whitespace-led hierarchy, a single navigation rail, and emerald reserved for live/success state. Silo uses your terminal’s font (monospace is recommended for alignment). Italic styling is reserved for keyboard callouts. Unlock and create flows use Daytona-style checkmark / progress ceremonies. Default inactivity timeout is 15 minutes:
+`add` accepts `--url`, `--username`, `--email`, `--password`, `--password-file`, and `--totp-secret`. Silo only prompts for values you omit. Prefer `--password-file` for scripts because `--password` can be exposed in shell history or process listings.
+
+The shell is a full-screen terminal workspace with a quiet editorial language: near-black canvas, whitespace-led hierarchy, a single navigation rail, and emerald reserved for live/success state. Set your terminal to Monaspace Radon for the intended feel; Silo reserves italic styling for keyboard callouts. Unlock and create flows use short checkmark / progress ceremonies. Default inactivity timeout is 15 minutes:
 
 ```bash
 cargo run -p silo -- shell
@@ -78,7 +81,7 @@ q                     Quit and lock
 
 Click an authentication to select it, or click a detail field to mark it for copy. Forms support mid-string editing with arrow keys / mouse click. Search text wraps and the input grows with content.
 
-Clipboard copy runs in the background so the workspace stays usable, then clears the clipboard after 20 seconds. Export is deliberately explicit because the output is plaintext JSON and must be protected or deleted after use.
+Clipboard copy runs in the background so the workspace stays usable, then clears the clipboard after 20 seconds only if another application has not replaced the copied value. Export is deliberately explicit because the output is plaintext JSON and must be protected or deleted after use. Saves are atomic and retain the previous vault as a `.bak` file.
 
 Use another vault file with `--vault`:
 
@@ -86,7 +89,7 @@ Use another vault file with `--vault`:
 cargo run -p silo -- --vault old-silo.vault list
 ```
 
-The previous `UZOPASS` file header is still accepted for compatibility. Newly saved vaults use the `SILO` header. Your existing `uzopass.vault` file is not moved or deleted; pass it explicitly with `--vault uzopass.vault` while transitioning.
+The previous `UZOPASS` file header is still accepted for compatibility. Newly saved vaults use the `SILO` header with recorded Argon2id parameters. Your existing `uzopass.vault` file is not moved or deleted; pass it explicitly with `--vault uzopass.vault` while transitioning.
 
 ## Why TOTP failed before
 
@@ -104,12 +107,32 @@ cargo run -p silo -- otp github
 
 The TOTP implementation currently supports the common six-digit, 30-second HMAC-SHA1 format. It accepts either a raw Base32 setup secret or a standard `otpauth://` URI copied from a QR-code tool. The value must be the setup secret, not the six-digit code currently displayed by an authenticator app.
 
+When a code does not work, use the diagnostic command:
+
+```bash
+cargo run -p silo -- --vault silo.vault otp-check github
+```
+
+It reports the source format, algorithm, digit count, period, decoded byte length, current code, and time remaining without printing the secret.
+
 ## Code map for learning
 
 - `crates/silo-core`: data structures, encryption, vault file format, URL matching, and TOTP.
 - `crates/silo-cli`: command parsing, prompts, and user-facing behavior.
-- `crates/silo-native-host`: future browser bridge process; keep this secondary for now.
-- `extension`: early browser extension experiment.
+- `crates/silo-native-host`: native messaging bridge process.
+- `extension`: browser bridge with explicit popup actions for login and one-time-code filling.
+
+## Browser bridge installation
+
+Build the native host, install the extension temporarily in the browser, then use its extension ID:
+
+```bash
+cargo build -p silo-native-host
+SILO_VAULT_PATH="$HOME/.local/share/silo/silo.vault" \
+  sh scripts/install-native-host.sh YOUR_EXTENSION_ID
+```
+
+On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host keeps one browser connection alive for its process lifetime, but it still prompts for the vault password in the launching environment. A desktop unlock broker is still required for a polished production release.
 
 Rust concepts to notice:
 

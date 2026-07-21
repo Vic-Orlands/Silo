@@ -2,7 +2,9 @@ use arboard::Clipboard;
 use clap::{Parser, Subcommand, ValueEnum};
 mod tui;
 use rand::Rng;
-use silo_core::{generate_totp, load_vault, new_entry, save_vault, Entry, SecretString, Vault};
+use silo_core::{
+    generate_totp, inspect_totp, load_vault, new_entry, save_vault, Entry, SecretString, Vault,
+};
 use std::{
     fs,
     io::{self, Write},
@@ -41,6 +43,10 @@ enum Command {
         username: Option<String>,
         #[arg(long)]
         email: Option<String>,
+        #[arg(long, conflicts_with = "password_file")]
+        password: Option<String>,
+        #[arg(long = "password-file", conflicts_with = "password")]
+        password_file: Option<PathBuf>,
         #[arg(long = "totp-secret")]
         totp_secret: Option<String>,
     },
@@ -61,6 +67,9 @@ enum Command {
         seconds: u64,
     },
     Otp {
+        query: String,
+    },
+    OtpCheck {
         query: String,
     },
     SetTotp {
@@ -107,6 +116,15 @@ enum Field {
     Url,
 }
 
+struct AddOptions {
+    url: Option<String>,
+    username: Option<String>,
+    email: Option<String>,
+    password: Option<String>,
+    password_file: Option<PathBuf>,
+    totp_secret: Option<String>,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("Error: {error}");
@@ -124,8 +142,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             url,
             username,
             email,
+            password,
+            password_file,
             totp_secret,
-        } => add(&cli.vault, name, url, username, email, totp_secret)?,
+        } => add(
+            &cli.vault,
+            name,
+            AddOptions {
+                url,
+                username,
+                email,
+                password,
+                password_file,
+                totp_secret,
+            },
+        )?,
         Command::List => list(&cli.vault)?,
         Command::Show { query } => show(&cli.vault, &query)?,
         Command::Get { query, field } => print_field(&cli.vault, &query, field)?,
@@ -135,6 +166,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             seconds,
         } => copy_field(&cli.vault, &query, field, seconds)?,
         Command::Otp { query } => otp(&cli.vault, &query)?,
+        Command::OtpCheck { query } => otp_check(&cli.vault, &query)?,
         Command::SetTotp { query, secret } => set_totp(&cli.vault, query, secret)?,
         Command::Edit {
             query,
@@ -162,22 +194,33 @@ fn init(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn add(
-    path: &Path,
-    name: String,
-    url: Option<String>,
-    username: Option<String>,
-    email: Option<String>,
-    totp_secret: Option<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn add(path: &Path, name: String, options: AddOptions) -> Result<(), Box<dyn std::error::Error>> {
     let master = prompt_password("Silo password: ")?;
     let mut vault = load_vault(path, &master)?;
-    let url = url.unwrap_or(prompt_line("URL: ")?);
-    let username = username.unwrap_or(prompt_line("Username: ")?);
-    let email = email.unwrap_or(prompt_line("Email (optional): ")?);
-    let password = prompt_password("Entry password: ")?;
-    let totp_secret = match totp_secret {
-        Some(secret) => Some(secret.trim().to_string()),
+    let url = match options.url {
+        Some(value) => value,
+        None => prompt_line("URL: ")?,
+    };
+    let username = match options.username {
+        Some(value) => value,
+        None => prompt_line("Username: ")?,
+    };
+    let email = match options.email {
+        Some(value) => value,
+        None => prompt_line("Email (optional): ")?,
+    };
+    let password = match (options.password, options.password_file) {
+        (Some(value), None) => Zeroizing::new(value),
+        (None, Some(path)) => Zeroizing::new(fs::read_to_string(path)?.trim_end().to_string()),
+        (None, None) => prompt_password("Entry password: ")?,
+        (Some(_), Some(_)) => unreachable!("clap prevents both password sources"),
+    };
+    let totp_secret = match options.totp_secret {
+        Some(secret) => {
+            let secret = secret.trim().to_string();
+            inspect_totp(&secret)?;
+            Some(secret)
+        }
         None => optional_secret()?,
     };
     vault.add(new_entry(
@@ -241,6 +284,32 @@ fn otp(path: &Path, query: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn otp_check(path: &Path, query: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let vault = unlock(path)?.0;
+    let entry = vault.find(query).ok_or("entry not found")?;
+    let secret = entry
+        .totp_secret
+        .as_ref()
+        .ok_or("this entry has no TOTP secret; use silo set-totp <name>")?;
+    let metadata = inspect_totp(secret.as_str())?;
+    let timestamp = now();
+    println!("Entry:       {}", entry.name);
+    println!("Source:      {}", metadata.source);
+    println!("Algorithm:   {}", metadata.algorithm);
+    println!("Digits:      {}", metadata.digits);
+    println!("Period:      {} seconds", metadata.period);
+    println!("Secret:      valid ({} bytes)", metadata.secret_bytes);
+    println!(
+        "Current OTP: {}",
+        generate_totp(secret.as_str(), timestamp)?
+    );
+    println!(
+        "Refreshes:   {} seconds",
+        metadata.period - timestamp % metadata.period
+    );
+    Ok(())
+}
+
 fn set_totp(
     path: &Path,
     query: String,
@@ -252,6 +321,9 @@ fn set_totp(
         Some(secret) => secret,
         None => prompt_line("TOTP secret or otpauth URI (blank clears it): ")?,
     };
+    if !secret.trim().is_empty() {
+        inspect_totp(secret.trim())?;
+    }
     entry.totp_secret = (!secret.trim().is_empty()).then_some(SecretString::new(secret.trim()));
     let name = entry.name.clone();
     save_vault(path, &vault, &master)?;
@@ -310,7 +382,8 @@ fn remove(path: &Path, query: String, yes: bool) -> Result<(), Box<dyn std::erro
 
 fn export_vault(path: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let vault = unlock(path)?.0;
-    fs::write(output, serde_json::to_vec_pretty(&vault)?)?;
+    let plaintext = Zeroizing::new(serde_json::to_vec_pretty(&vault)?);
+    fs::write(output, plaintext.as_slice())?;
     set_private_permissions(output)?;
     println!(
         "Exported plaintext JSON to {}. Protect or delete this file.",
@@ -363,7 +436,7 @@ fn print_metadata(entry: &Entry) {
     );
 }
 
-fn field_value<'a>(entry: &'a Entry, field: Field) -> &'a str {
+fn field_value(entry: &Entry, field: Field) -> &str {
     match field {
         Field::Username => &entry.username,
         Field::Email => &entry.email,
@@ -380,7 +453,12 @@ fn copy_value(value: &str, seconds: u64) -> Result<(), Box<dyn std::error::Error
     clipboard.set_text(value)?;
     println!("Copied. Clearing clipboard in {seconds} seconds.");
     thread::sleep(Duration::from_secs(seconds));
-    clipboard.set_text("")?;
+    if clipboard.get_text().ok().as_deref() == Some(value) {
+        clipboard.set_text("")?;
+    } else {
+        println!("Clipboard changed by another application; leaving it untouched.");
+        return Ok(());
+    }
     println!("Clipboard cleared.");
     Ok(())
 }
@@ -400,6 +478,9 @@ fn generate_password(length: usize) -> Result<String, Box<dyn std::error::Error>
 
 fn optional_secret() -> Result<Option<String>, Box<dyn std::error::Error>> {
     let secret = prompt_line("TOTP secret or otpauth URI (press Enter to skip): ")?;
+    if !secret.trim().is_empty() {
+        inspect_totp(secret.trim())?;
+    }
     Ok((!secret.trim().is_empty()).then_some(secret.trim().to_string()))
 }
 

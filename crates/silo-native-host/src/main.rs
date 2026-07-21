@@ -12,8 +12,8 @@ use std::{
     about = "Local native-messaging bridge for the Silo browser extension"
 )]
 struct Args {
-    #[arg(short, long, default_value = "silo.vault")]
-    vault: PathBuf,
+    #[arg(short, long)]
+    vault: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,9 +40,10 @@ struct Response<'a> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let vault_path = args.vault.unwrap_or_else(default_vault_path);
     eprintln!("Silo native host: unlock the vault to enable browser autofill.");
     let password = rpassword::prompt_password("Vault password: ")?;
-    let vault = load_vault(&args.vault, &password)?;
+    let vault = load_vault(&vault_path, &password)?;
     let mut input = io::stdin();
     let mut output = io::stdout();
 
@@ -119,6 +120,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn default_vault_path() -> PathBuf {
+    if let Ok(path) = std::env::var("SILO_VAULT_PATH") {
+        return PathBuf::from(path);
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join("Library/Application Support/Silo/silo.vault");
+    }
+    #[cfg(target_os = "windows")]
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(local_app_data).join("Silo/silo.vault");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".local/share/silo/silo.vault");
+    }
+    PathBuf::from("silo.vault")
+}
+
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -150,4 +169,27 @@ fn write_message(output: &mut impl Write, message: &[u8]) -> io::Result<()> {
     output.write_all(&(message.len() as u32).to_le_bytes())?;
     output.write_all(message)?;
     output.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_messages_round_trip_with_little_endian_length() {
+        let message = br#"{"type":"get_otp","url":"https://github.com"}"#;
+        let mut encoded = Vec::new();
+        write_message(&mut encoded, message).unwrap();
+        assert_eq!(&encoded[..4], &(message.len() as u32).to_le_bytes());
+        assert_eq!(
+            read_message(&mut encoded.as_slice()).unwrap(),
+            Some(message.to_vec())
+        );
+    }
+
+    #[test]
+    fn native_messages_reject_oversized_frames() {
+        let encoded = (1_000_001u32).to_le_bytes().to_vec();
+        assert!(read_message(&mut encoded.as_slice()).is_err());
+    }
 }

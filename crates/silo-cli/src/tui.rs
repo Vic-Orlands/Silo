@@ -15,7 +15,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
-use silo_core::{generate_totp, load_vault, new_entry, save_vault, Entry, SecretString, Vault};
+use silo_core::{
+    generate_totp, inspect_totp, load_vault, new_entry, save_vault, Entry, SecretString, Vault,
+};
 use std::{
     io::{self, stdout},
     path::{Path, PathBuf},
@@ -140,8 +142,8 @@ struct FormState {
     url: String,
     username: String,
     email: String,
-    password: String,
-    totp: String,
+    password: Zeroizing<String>,
+    totp: Zeroizing<String>,
     focus: usize,
     cursors: [usize; FORM_FIELD_COUNT],
     reveal_password: bool,
@@ -245,9 +247,9 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::Ceremony(ceremony) => {
             // Clone ceremony data for drawing without holding a borrow on app.screen
             let ceremony = match ceremony {
-                Ceremony::Unlocking { started, .. } => CeremonyDraw::Unlocking {
-                    started: *started,
-                },
+                Ceremony::Unlocking { started, .. } => {
+                    CeremonyDraw::Unlocking { started: *started }
+                }
                 Ceremony::Created {
                     started,
                     name,
@@ -507,16 +509,16 @@ fn draw_workspace(frame: &mut ratatui::Frame, app: &mut App) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // brand + total
-            Constraint::Length(1), // nav border
-            Constraint::Length(1), // margin under nav
-            Constraint::Min(8),    // body
-            Constraint::Length(1), // margin above find label
-            Constraint::Length(1), // Find a login · status
-            Constraint::Length(1), // margin top on search input
+            Constraint::Length(3),        // brand + total
+            Constraint::Length(1),        // nav border
+            Constraint::Length(1),        // margin under nav
+            Constraint::Min(8),           // body
+            Constraint::Length(1),        // margin above find label
+            Constraint::Length(1),        // Find a login · status
+            Constraint::Length(1),        // margin top on search input
             Constraint::Length(search_h), // wrapping search input
-            Constraint::Length(1), // margin above key bindings
-            Constraint::Length(1), // key bindings
+            Constraint::Length(1),        // margin above key bindings
+            Constraint::Length(1),        // key bindings
         ])
         .split(inset(frame.area(), 3, 1));
 
@@ -631,11 +633,15 @@ fn draw_search_input(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
     };
     frame.render_widget(
         Paragraph::new(display)
-            .style(Style::default().fg(if app.search.is_empty() && !app.search_mode {
-                FAINT
-            } else {
-                INK
-            }).bg(SURFACE_2))
+            .style(
+                Style::default()
+                    .fg(if app.search.is_empty() && !app.search_mode {
+                        FAINT
+                    } else {
+                        INK
+                    })
+                    .bg(SURFACE_2),
+            )
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -769,10 +775,7 @@ fn draw_detail(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
         ("URL", url.as_str(), false),
         ("Password", "••••••••••••••••", false),
     ];
-    let otp_value = otp
-        .as_ref()
-        .map(|code| code.as_str())
-        .unwrap_or("not configured");
+    let otp_value = otp.as_deref().unwrap_or("not configured");
     if otp.is_some() || has_totp {
         rows.push(("OTP", otp_value, otp.is_some()));
     }
@@ -886,13 +889,13 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         form.username.clone(),
         form.email.clone(),
         if reveal {
-            form.password.clone()
+            form.password.to_string()
         } else if form.password.is_empty() {
             String::new()
         } else {
             "•".repeat(form.password.chars().count())
         },
-        form.totp.clone(),
+        form.totp.to_string(),
     ];
     let blink = cursor_on(app);
 
@@ -953,7 +956,13 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         ];
         if active {
             row.extend(
-                caret_line(&shown, cursor.min(shown.chars().count()), blink, value_style).spans,
+                caret_line(
+                    &shown,
+                    cursor.min(shown.chars().count()),
+                    blink,
+                    value_style,
+                )
+                .spans,
             );
         } else {
             row.push(Span::styled(shown, value_style));
@@ -961,7 +970,9 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         lines.push(Line::from(row));
         lines.push(Line::from(""));
 
-        let y = field_area.y.saturating_add((index as u16).saturating_mul(2));
+        let y = field_area
+            .y
+            .saturating_add((index as u16).saturating_mul(2));
         field_rects.push(Rect {
             x: field_area.x,
             y,
@@ -1148,7 +1159,9 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<bool, Box<dyn std::error::
 
     match &mut app.screen {
         Screen::Unlock { password, cursor } => {
-            if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('u') | KeyCode::Char('U')) {
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('u') | KeyCode::Char('U'))
+            {
                 password.clear();
                 *cursor = 0;
                 return Ok(false);
@@ -1530,6 +1543,13 @@ impl App {
         let email = form.email.clone();
         let url = form.url.clone();
         let has_totp = !form.totp.trim().is_empty();
+        if has_totp {
+            if let Err(error) = inspect_totp(form.totp.trim()) {
+                self.set_status(error.to_string(), StatusKind::Error);
+                self.form = Some(form);
+                return Ok(());
+            }
+        }
 
         if let Some(id) = form.id {
             let Some(entry) = self.vault.entries.iter_mut().find(|entry| entry.id == id) else {
@@ -1540,17 +1560,17 @@ impl App {
             entry.url = form.url;
             entry.username = form.username;
             entry.email = form.email;
-            entry.password = SecretString::new(form.password);
+            entry.password = SecretString::new(form.password.to_string());
             entry.totp_secret =
-                (!form.totp.trim().is_empty()).then_some(SecretString::new(form.totp));
+                (!form.totp.trim().is_empty()).then_some(SecretString::new(form.totp.to_string()));
         } else {
             self.vault.add(new_entry(
                 form.title,
                 form.url,
                 form.username,
                 form.email,
-                form.password,
-                (!form.totp.trim().is_empty()).then_some(form.totp),
+                form.password.to_string(),
+                (!form.totp.trim().is_empty()).then_some(form.totp.to_string()),
             ));
         }
         self.save()?;
@@ -1636,10 +1656,7 @@ impl App {
             ),
             3 => ("URL", entry.url.clone()),
             4 => ("Password", entry.password.as_str().to_string()),
-            5 => (
-                "OTP",
-                otp.unwrap_or_default(),
-            ),
+            5 => ("OTP", otp.unwrap_or_default()),
             _ => return,
         };
         if value.is_empty() {
@@ -1682,8 +1699,8 @@ impl FormState {
                     url,
                     username,
                     email,
-                    password,
-                    totp,
+                    password: Zeroizing::new(password),
+                    totp: Zeroizing::new(totp),
                     focus: 0,
                     cursors,
                     reveal_password: false,
@@ -1695,8 +1712,8 @@ impl FormState {
                 url: String::new(),
                 username: String::new(),
                 email: String::new(),
-                password: String::new(),
-                totp: String::new(),
+                password: Zeroizing::new(String::new()),
+                totp: Zeroizing::new(String::new()),
                 focus: 0,
                 cursors: [0; FORM_FIELD_COUNT],
                 reveal_password: false,
@@ -1753,7 +1770,7 @@ fn selected_entry(app: &App) -> Option<&Entry> {
 }
 
 fn cursor_on(app: &App) -> bool {
-    (app.started.elapsed().as_millis() / 530) % 2 == 0
+    (app.started.elapsed().as_millis() / 530).is_multiple_of(2)
 }
 
 fn overview_field_count(app: &App) -> usize {
@@ -1845,9 +1862,11 @@ fn delete_after(s: &mut String, cursor: usize) {
 fn clipboard_copy(value: String) {
     thread::spawn(move || {
         if let Ok(mut clipboard) = Clipboard::new() {
-            let _ = clipboard.set_text(value);
+            let _ = clipboard.set_text(value.clone());
             thread::sleep(Duration::from_secs(20));
-            let _ = clipboard.set_text("");
+            if clipboard.get_text().ok().as_deref() == Some(value.as_str()) {
+                let _ = clipboard.set_text("");
+            }
         }
     });
 }
