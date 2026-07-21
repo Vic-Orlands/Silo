@@ -614,36 +614,39 @@ fn draw_search_label(frame: &mut ratatui::Frame, app: &App, area: Rect) {
 
 fn draw_search_input(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
     app.hit.search_input = Some(area);
-    let show_caret = app.search_mode && cursor_on(app);
+    let style = Style::default()
+        .fg(if app.search.is_empty() && !app.search_mode {
+            FAINT
+        } else {
+            INK
+        })
+        .bg(SURFACE_2);
+
+    // Full-bleed surface, then equal top/bottom + left padding for the text.
+    frame.render_widget(Block::default().style(Style::default().bg(SURFACE_2)), area);
+    let inner = pad(area, 1, 1);
+
     let text = if app.search.is_empty() && !app.search_mode {
-        " type to filter…".to_string()
+        "type to filter…".to_string()
     } else {
-        format!(" {}", app.search)
+        app.search.clone()
     };
-    // Cursor is offset by the leading space when showing real search text.
-    let cursor = if app.search.is_empty() && !app.search_mode {
-        0
+    let line = if app.search_mode {
+        caret_line(
+            &text,
+            app.search_cursor.min(text.chars().count()),
+            cursor_on(app),
+            style,
+        )
     } else {
-        app.search_cursor.saturating_add(1)
+        Line::from(Span::styled(text, style))
     };
-    let display = if app.search_mode {
-        text_with_caret(&text, cursor.min(text.chars().count()), show_caret)
-    } else {
-        text
-    };
+
     frame.render_widget(
-        Paragraph::new(display)
-            .style(
-                Style::default()
-                    .fg(if app.search.is_empty() && !app.search_mode {
-                        FAINT
-                    } else {
-                        INK
-                    })
-                    .bg(SURFACE_2),
-            )
+        Paragraph::new(line)
+            .style(Style::default().bg(SURFACE_2))
             .wrap(Wrap { trim: false }),
-        area,
+        inner,
     );
 }
 
@@ -667,7 +670,6 @@ fn draw_entry_list(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
     for (visible_i, index) in indices.iter().enumerate() {
         let entry = &app.vault.entries[*index];
         let selected = visible_i == app.selected.min(indices.len().saturating_sub(1));
-        let marker = if selected { "-" } else { " " };
         let title_style = if selected {
             Style::default().fg(EMERALD).add_modifier(Modifier::BOLD)
         } else {
@@ -675,7 +677,7 @@ fn draw_entry_list(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
         };
         items.push(ListItem::new(vec![
             Line::from(vec![
-                Span::styled(format!("{marker} "), Style::default().fg(EMERALD)),
+                selection_gutter(selected),
                 Span::styled(display_title(&entry.name), title_style),
             ]),
             Line::from(vec![
@@ -820,14 +822,14 @@ fn draw_kv_card(
         if i > 0 {
             lines.push(Line::from(""));
         }
-        let marker = if selected == Some(i) { "-" } else { " " };
-        let label_style = if selected == Some(i) {
+        let active = selected == Some(i);
+        let label_style = if active {
             Style::default().fg(EMERALD).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(MUTED)
         };
         lines.push(Line::from(vec![
-            Span::styled(format!("{marker} "), Style::default().fg(EMERALD)),
+            selection_gutter(active),
             Span::styled(format!("{label:<12}"), label_style),
             Span::styled(
                 (*value).to_string(),
@@ -945,10 +947,7 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
             MUTED
         });
         let mut row = vec![
-            Span::styled(
-                format!("{} ", if active { "-" } else { " " }),
-                Style::default().fg(if active { EMERALD } else { FAINT }),
-            ),
+            selection_gutter(active),
             Span::styled(
                 format!("{label:<12}"),
                 Style::default().fg(if active { MUTED } else { FAINT }),
@@ -1785,48 +1784,56 @@ fn overview_field_count(app: &App) -> usize {
 }
 
 fn search_wrapped_height(app: &App, width: u16) -> u16 {
-    let width = width.max(1);
+    // Inner text width accounts for left/right pad(area, 1, 1).
+    let width = width.saturating_sub(2).max(1);
     let len = if app.search.is_empty() && !app.search_mode {
-        18u16
+        16u16
     } else {
-        (app.search.chars().count() as u16).saturating_add(3)
+        (app.search.chars().count() as u16).saturating_add(1)
     };
-    len.div_ceil(width).clamp(2, 10)
+    // +2 for equal top/bottom padding inside the search surface.
+    len.div_ceil(width).clamp(1, 8).saturating_add(2)
 }
 
+/// Fixed-width selection gutter so labels never shift when active.
+fn selection_gutter(active: bool) -> Span<'static> {
+    if active {
+        Span::styled("▌ ", Style::default().fg(EMERALD))
+    } else {
+        Span::raw("  ")
+    }
+}
+
+/// Stable caret: invert the character under the cursor, and always reserve a
+/// trailing cell so blink and ←/→ never change the line width.
 fn caret_line(text: &str, cursor: usize, show_caret: bool, style: Style) -> Line<'static> {
     let chars: Vec<char> = text.chars().collect();
     let cursor = cursor.min(chars.len());
-    let before: String = chars[..cursor].iter().collect();
-    let after: String = chars[cursor..].iter().collect();
-    if show_caret {
-        Line::from(vec![
-            Span::styled(before, style),
-            Span::styled("▌", Style::default().fg(EMERALD)),
-            Span::styled(after, style),
-        ])
-    } else {
-        Line::from(Span::styled(text.to_string(), style))
-    }
-}
+    let mut spans = Vec::new();
 
-fn text_with_caret(text: &str, cursor: usize, show_caret: bool) -> String {
-    if !show_caret {
-        return text.to_string();
-    }
-    let chars: Vec<char> = text.chars().collect();
-    let cursor = cursor.min(chars.len());
-    let mut out = String::new();
     for (i, ch) in chars.iter().enumerate() {
-        if i == cursor {
-            out.push('▌');
-        }
-        out.push(*ch);
+        let on_cursor = i == cursor;
+        let cell_style = if on_cursor && show_caret {
+            Style::default()
+                .fg(CANVAS)
+                .bg(EMERALD)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            style
+        };
+        spans.push(Span::styled(ch.to_string(), cell_style));
     }
-    if cursor >= chars.len() {
-        out.push('▌');
-    }
-    out
+
+    // Trailing cell: caret when at EOL, invisible spacer otherwise — keeps width fixed.
+    let end_on = cursor >= chars.len() && show_caret;
+    let end_style = if end_on {
+        Style::default().fg(CANVAS).bg(EMERALD)
+    } else {
+        style
+    };
+    spans.push(Span::styled(" ", end_style));
+
+    Line::from(spans)
 }
 
 fn byte_index(s: &str, char_idx: usize) -> usize {
