@@ -1,0 +1,18 @@
+[package]
+name = "silo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+arboard = "3.6"
+clap.workspace = true
+crossterm = "0.28"
+ratatui = "0.29"
+rpassword.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+time.workspace = true
+silo-core = { path = "../silo-core" }
+uuid.workspace = true
+zeroize.workspace = true
