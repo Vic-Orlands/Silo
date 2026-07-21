@@ -1,0 +1,9 @@
+{
+  "name": "com.silo.native",
+  "description": "Silo native messaging host",
+  "path": "/ABSOLUTE/PATH/TO/silo-native-host",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID/"
+  ]
+}

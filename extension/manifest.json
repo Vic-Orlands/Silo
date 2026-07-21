@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Silo Browser Bridge",
+  "version": "0.1.0",
+  "description": "Autofill credentials from the local Silo native host.",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Fill with Silo"
+  }
+}
