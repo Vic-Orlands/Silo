@@ -951,23 +951,30 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         form.totp.to_string(),
     ];
     let blink = cursor_on(app);
+    let panel = Style::default().bg(SURFACE);
 
     let area = centered(frame.area(), 70, 26);
-    frame.render_widget(Block::default().style(Style::default().bg(CANVAS)), area);
-
     let title = if is_edit { "Edit login" } else { "New login" };
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(BORDER_FOCUS).bg(SURFACE))
+            .title(Line::from(Span::styled(
+                format!(" {title} "),
+                Style::default()
+                    .fg(INK)
+                    .bg(SURFACE)
+                    .add_modifier(Modifier::BOLD),
+            )))
+            .style(panel),
+        area,
+    );
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(8)])
+        .constraints([Constraint::Min(8), Constraint::Length(1)])
         .split(pad(area, 2, 1));
-
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            title,
-            Style::default().fg(INK).add_modifier(Modifier::BOLD),
-        ))),
-        chunks[0],
-    );
 
     let labels = [
         "Name",
@@ -977,7 +984,7 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         "Password",
         "TOTP secret",
     ];
-    let field_area = chunks[1];
+    let field_area = chunks[0];
     let mut field_rects = Vec::new();
     let mut lines = Vec::new();
     for (index, label) in labels.iter().enumerate() {
@@ -990,7 +997,7 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         } else {
             value.clone()
         };
-        let value_style = Style::default().fg(if empty {
+        let value_style = panel.fg(if empty {
             FAINT
         } else if active {
             INK
@@ -998,10 +1005,10 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
             MUTED
         });
         let mut row = vec![
-            selection_gutter(active),
+            selection_gutter_on(active, SURFACE),
             Span::styled(
                 format!("{label:<12}"),
-                Style::default().fg(if active { MUTED } else { FAINT }),
+                panel.fg(if active { MUTED } else { FAINT }),
             ),
         ];
         if active {
@@ -1030,17 +1037,29 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
             height: 2,
         });
     }
-    lines.push(Line::from(hint_spans(&[
-        ("tab", "next"),
-        ("←→", "move"),
-        ("ctrl-s", "save"),
-        ("ctrl-u", "clear"),
-        ("x", "reveal"),
-        ("esc", "cancel"),
-    ])));
 
     app.hit.form_fields = field_rects;
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), field_area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(panel)
+            .wrap(Wrap { trim: false }),
+        field_area,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(hint_spans_on(
+            &[
+                ("tab", "next"),
+                ("←→", "move"),
+                ("ctrl-s", "save"),
+                ("ctrl-u", "clear"),
+                ("x", "reveal"),
+                ("esc", "cancel"),
+            ],
+            SURFACE,
+        )))
+        .style(panel),
+        chunks[1],
+    );
 }
 
 fn draw_help(frame: &mut ratatui::Frame, app: &App) {
@@ -1154,6 +1173,7 @@ fn help_lines() -> Vec<Line<'static>> {
 }
 
 fn dim_area(frame: &mut ratatui::Frame, area: Rect) {
+    // Keep the green canvas, but dim foreground so the modal panel can sit on top.
     let buf = frame.buffer_mut();
     for y in area.top()..area.bottom() {
         for x in area.left()..area.right() {
@@ -1171,7 +1191,15 @@ fn dim_area(frame: &mut ratatui::Frame, area: Rect) {
 
 fn draw_delete_modal(frame: &mut ratatui::Frame, app: &App) {
     let area = centered(frame.area(), 52, 11);
-    frame.render_widget(Block::default().style(Style::default().bg(CANVAS)), area);
+    let panel = Style::default().bg(SURFACE);
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(BORDER_FOCUS).bg(SURFACE))
+            .style(panel),
+        area,
+    );
     let name = selected_entry(app)
         .map(|entry| display_title(&entry.name))
         .unwrap_or_else(|| "this entry".into());
@@ -1180,16 +1208,20 @@ fn draw_delete_modal(frame: &mut ratatui::Frame, app: &App) {
         Paragraph::new(vec![
             Line::from(Span::styled(
                 "Remove this login?",
-                Style::default().fg(INK).add_modifier(Modifier::BOLD),
+                panel.fg(INK).add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Login           ", Style::default().fg(MUTED)),
-                Span::styled(name, Style::default().fg(CORAL)),
+                Span::styled("Login           ", panel.fg(MUTED)),
+                Span::styled(name, panel.fg(CORAL)),
             ]),
             Line::from(""),
-            Line::from(hint_spans(&[("y", "confirm"), ("n", "cancel")])),
-        ]),
+            Line::from(hint_spans_on(
+                &[("y", "confirm"), ("n", "cancel")],
+                SURFACE,
+            )),
+        ])
+        .style(panel),
         pad(area, 2, 1),
     );
 }
@@ -1846,10 +1878,14 @@ fn search_wrapped_height(app: &App, width: u16) -> u16 {
 
 /// Fixed-width selection gutter so labels never shift when active.
 fn selection_gutter(active: bool) -> Span<'static> {
+    selection_gutter_on(active, CANVAS)
+}
+
+fn selection_gutter_on(active: bool, bg: Color) -> Span<'static> {
     if active {
-        Span::styled("▌ ", Style::default().fg(EMERALD))
+        Span::styled("▌ ", Style::default().fg(EMERALD).bg(bg))
     } else {
-        Span::raw("  ")
+        Span::styled("  ", Style::default().bg(bg))
     }
 }
 
@@ -1973,15 +2009,25 @@ fn otp_ring(progress: f64) -> String {
 // --- Visual primitives -------------------------------------------------------
 
 fn hint_spans(pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
+    hint_spans_on(pairs, CANVAS)
+}
+
+fn hint_spans_on(pairs: &[(&str, &str)], bg: Color) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (i, (key, label)) in pairs.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::raw("  "));
+            spans.push(Span::styled("  ", Style::default().bg(bg)));
         }
-        spans.push(Span::styled((*key).to_string(), Style::default().fg(INK)));
+        spans.push(Span::styled(
+            (*key).to_string(),
+            Style::default().fg(INK).bg(bg),
+        ));
         spans.push(Span::styled(
             format!(" {label}"),
-            Style::default().fg(FAINT).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(FAINT)
+                .bg(bg)
+                .add_modifier(Modifier::ITALIC),
         ));
     }
     spans
