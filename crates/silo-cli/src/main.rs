@@ -3,7 +3,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 mod tui;
 use rand::Rng;
 use silo_core::{
-    generate_totp, inspect_totp, load_vault, new_entry, save_vault, Entry, SecretString, Vault,
+    export_json, generate_totp, import_json, inspect_totp, load_vault, new_entry, save_vault,
+    Entry, SecretString, Vault,
 };
 use std::{
     fs,
@@ -387,7 +388,7 @@ fn remove(path: &Path, query: String, yes: bool) -> Result<(), Box<dyn std::erro
 
 fn export_vault(path: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let vault = unlock(path)?.0;
-    let plaintext = Zeroizing::new(serde_json::to_vec_pretty(&vault)?);
+    let plaintext = Zeroizing::new(export_json(&vault)?);
     fs::write(output, plaintext.as_slice())?;
     set_private_permissions(output)?;
     println!(
@@ -402,7 +403,7 @@ fn import_vault(
     input: &Path,
     replace: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let imported: Vault = serde_json::from_slice(&fs::read(input)?)?;
+    let imported = import_json(&fs::read(input)?)?;
     let (mut vault, master) = unlock(path)?;
     if replace {
         vault = imported;

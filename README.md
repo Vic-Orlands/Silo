@@ -131,6 +131,7 @@ It reports the source format, algorithm, digit count, period, decoded byte lengt
 - `crates/silo-core`: data structures, encryption, vault file format, URL matching, and TOTP.
 - `crates/silo-cli`: command parsing, prompts, and user-facing behavior.
 - `crates/silo-broker`: unlocked local session, timeout, lock, and browser request policy.
+- `crates/silo-protocol`: versioned JSON requests, responses, broker state, and native-messaging frames shared by the broker and host.
 - `crates/silo-native-host`: native messaging bridge process.
 - `extension`: browser bridge with explicit popup actions for login and one-time-code filling.
 
@@ -162,6 +163,16 @@ cargo test --workspace
 cargo run -p silo -- --help
 ```
 
-The same checks are available through `sh scripts/verify.sh`. Optional fuzz targets live in `fuzz/` and require `cargo-fuzz`.
+The same checks are available through `sh scripts/verify.sh`. Packaging checks are run with `sh scripts/test-packaging.sh`. Dependency audits run in CI with `cargo-audit`; fuzz targets live in `fuzz/` and require the nightly toolchain:
+
+```bash
+cargo install cargo-fuzz
+rustup toolchain install nightly
+cd fuzz
+cargo +nightly fuzz run totp_input -- -max_total_time=60
+cargo +nightly fuzz run vault_file -- -max_total_time=60
+```
+
+Tagged releases are built for Linux, macOS, and Windows. The release workflow signs each SHA-256 checksum with Cosign. Configure `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` repository secrets, then verify release signatures with Silo's published public key.
 
 This remains an educational prototype, not an audited password manager. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host", "crates/silo-broker"]
+members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host", "crates/silo-broker", "crates/silo-protocol"]
 exclude = ["fuzz"]
 resolver = "2"
 

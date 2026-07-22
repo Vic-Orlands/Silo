@@ -1396,6 +1396,7 @@ dependencies = [
  "serde",
  "serde_json",
  "silo-core",
+ "silo-protocol",
  "time",
  "zeroize",
 ]
@@ -1426,6 +1427,16 @@ name = "silo-native-host"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde",
+ "serde_json",
+ "silo-protocol",
+ "zeroize",
+]
+
+[[package]]
+name = "silo-protocol"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "zeroize",

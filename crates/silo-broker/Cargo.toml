@@ -11,5 +11,6 @@ rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 silo-core = { path = "../silo-core" }
+silo-protocol = { path = "../silo-protocol" }
 time.workspace = true
 zeroize.workspace = true
