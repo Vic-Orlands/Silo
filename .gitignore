@@ -35,3 +35,11 @@ Desktop.ini
 tmp/
 temp/
 .cache/
+
+# Landing page (separate repo: Vic-Orlands/silo-homepage)
+landing/
+
+# Fuzz artifacts
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
