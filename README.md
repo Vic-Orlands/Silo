@@ -2,7 +2,7 @@
 
 Silo is a local-first password manager from scratch. The command-line interface and local browser bridge are the primary product surfaces. You can also use the Shell for better UX interactivity.
 
-https://github.com/Vic-Orlands/Silo/raw/main/docs/assets/silo-shell.mp4
+https://github.com/user-attachments/assets/c8749aa5-8d67-48ef-972e-2d66a75aac59
 
 ## Start here
 
