@@ -29,10 +29,20 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/silo${{ runner.os == 'Windows' && '.exe' || '' }} dist/
-          cp target/${{ matrix.target }}/release/silo-native-host${{ runner.os == 'Windows' && '.exe' || '' }} dist/
-          tar -czf dist/silo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz -C dist silo* 
-          shasum -a 256 dist/silo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz > dist/silo-${{ github.ref_name }}-${{ matrix.target }}.sha256
+          suffix=""
+          if [[ "${{ runner.os }}" == "Windows" ]]; then suffix=".exe"; fi
+          staging="dist/staging-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp "target/${{ matrix.target }}/release/silo${suffix}" "$staging/"
+          cp "target/${{ matrix.target }}/release/silo-native-host${suffix}" "$staging/"
+          archive="dist/silo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$archive" -C "$staging" .
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$archive" > "${archive%.tar.gz}.sha256"
+          else
+            shasum -a 256 "$archive" > "${archive%.tar.gz}.sha256"
+          fi
+          rm -rf "$staging"
       - uses: actions/upload-artifact@v4
         with:
           name: silo-${{ matrix.target }}
