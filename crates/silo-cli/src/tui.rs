@@ -27,7 +27,7 @@ use std::{
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-const CANVAS: Color = Color::Rgb(0, 0, 0);
+const CANVAS: Color = Color::Rgb(12, 14, 12);
 const SURFACE: Color = Color::Rgb(10, 10, 10);
 const SURFACE_2: Color = Color::Rgb(18, 18, 18);
 const BORDER: Color = Color::Rgb(42, 42, 42);
@@ -289,7 +289,7 @@ enum CeremonyDraw {
 // --- Unlock / login (borderless) ---------------------------------------------
 
 fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
-    let area = centered(frame.area(), 52, 14);
+    let area = centered(frame.area(), 56, 20);
     frame.render_widget(Block::default().style(Style::default().bg(CANVAS)), area);
 
     let (password, cursor) = match &app.screen {
@@ -300,8 +300,7 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(3),
             Constraint::Length(2),
             Constraint::Length(2),
             Constraint::Length(1),
@@ -312,18 +311,18 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
         .split(area);
 
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "SILO",
-            Style::default().fg(INK).add_modifier(Modifier::BOLD),
-        ))),
+        Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Silo",
+                Style::default().fg(INK).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "Your vault stays local.",
+                Style::default().fg(MUTED),
+            )),
+        ]),
         chunks[0],
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "private vault",
-            Style::default().fg(FAINT),
-        ))),
-        chunks[1],
     );
 
     let masked = "•".repeat(password.chars().count());
@@ -332,9 +331,9 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
             "Master password",
             Style::default().fg(MUTED),
         ))),
-        chunks[3],
+        chunks[2],
     );
-    app.hit.unlock_input = Some(chunks[4]);
+    app.hit.unlock_input = Some(chunks[3]);
     frame.render_widget(
         Paragraph::new(caret_line(
             &masked,
@@ -342,7 +341,7 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
             cursor_on(app),
             Style::default().fg(INK),
         )),
-        chunks[4],
+        chunks[3],
     );
 
     frame.render_widget(
@@ -350,7 +349,7 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
             app.status.as_str(),
             status_style(app.status_kind),
         ))),
-        chunks[5],
+        chunks[4],
     );
     frame.render_widget(
         Paragraph::new(Line::from(hint_spans(&[
@@ -358,7 +357,7 @@ fn draw_unlock(frame: &mut ratatui::Frame, app: &mut App) {
             ("esc", "quit"),
             ("ctrl-u", "clear"),
         ]))),
-        chunks[6],
+        chunks[5],
     );
 }
 
@@ -745,7 +744,7 @@ fn draw_detail(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
             entry.email.clone()
         };
         let username = entry.username.clone();
-        let url = entry.url.clone();
+        let url = display_url(&entry.url);
         let has_totp = entry.totp_secret.is_some();
         (title, username, email, url, otp, remaining, has_totp)
     };
@@ -754,34 +753,47 @@ fn draw_detail(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
     let header = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(14),
-            Constraint::Length(1),
-            Constraint::Min(0),
+            Constraint::Length(2),
+            Constraint::Length(3),
+            Constraint::Min(8),
         ])
         .split(area);
 
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            title.clone(),
-            Style::default().fg(INK).add_modifier(Modifier::BOLD),
-        ))),
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                format!("Authentication / {title}"),
+                Style::default().fg(FAINT),
+            )),
+            Line::from(""),
+        ]),
         header[0],
     );
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                title.clone(),
+                Style::default().fg(INK).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(""),
+        ]),
+        header[1],
+    );
 
-    let mut rows: Vec<(&str, &str, bool)> = vec![
-        ("Login", title.as_str(), false),
-        ("Username", username.as_str(), false),
-        ("Email", email.as_str(), false),
-        ("URL", url.as_str(), false),
-        ("Password", "••••••••••••••••", false),
+    let mut rows: Vec<(&str, String, bool)> = vec![
+        ("Username", username, false),
+        ("Email", email, false),
+        ("Password", "••••••••••••••••••".to_string(), false),
+        ("URL", url, false),
     ];
-    let otp_value = otp.as_deref().unwrap_or("not configured");
+    let otp_display = otp
+        .as_deref()
+        .map(format_otp)
+        .unwrap_or_else(|| "not configured".to_string());
     if otp.is_some() || has_totp {
-        rows.push(("OTP", otp_value, otp.is_some()));
+        rows.push(("OTP code", otp_display, otp.is_some()));
     }
-    // Clamp field_nav if OTP disappeared
     if let Some(nav) = app.field_nav {
         if nav >= rows.len() {
             app.field_nav = Some(rows.len().saturating_sub(1));
@@ -789,17 +801,56 @@ fn draw_detail(frame: &mut ratatui::Frame, app: &mut App, area: Rect) {
     }
     let field_nav = app.field_nav;
     app.hit.detail_card = Some(header[2]);
-    draw_kv_card(frame, header[2], &rows, field_nav);
+    draw_overview_fields(frame, header[2], &rows, field_nav, remaining, otp.is_some());
+}
 
-    if otp.is_some() {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                format!("refreshes in {remaining}s"),
-                Style::default().fg(FAINT),
-            ))),
-            header[3],
-        );
+/// Landing-style overview rows with separators and an OTP ring timer.
+fn draw_overview_fields(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    rows: &[(&str, String, bool)],
+    selected: Option<usize>,
+    remaining: u64,
+    otp_live: bool,
+) {
+    let mut lines = Vec::new();
+    for (i, (label, value, live)) in rows.iter().enumerate() {
+        let active = selected == Some(i);
+        let label_style = if active {
+            Style::default().fg(EMERALD).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(FAINT)
+        };
+        let mut row = vec![
+            selection_gutter(active),
+            Span::styled(format!("{label:<14}"), label_style),
+        ];
+        if *live {
+            row.push(Span::styled(
+                value.clone(),
+                Style::default().fg(EMERALD).add_modifier(Modifier::BOLD),
+            ));
+            if otp_live && *label == "OTP code" {
+                let progress = remaining as f64 / 30.0;
+                row.push(Span::raw("  "));
+                row.push(Span::styled(otp_ring(progress), Style::default().fg(EMERALD)));
+                row.push(Span::styled(
+                    format!(" {remaining}s"),
+                    Style::default().fg(MUTED),
+                ));
+            }
+        } else {
+            row.push(Span::styled(value.clone(), Style::default().fg(INK)));
+        }
+        lines.push(Line::from(row));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "─".repeat(area.width as usize),
+            Style::default().fg(BORDER),
+        )));
+        lines.push(Line::from(""));
     }
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
 }
 
 /// Daytona-style bordered key/value card (Workspace / State / Editor).
@@ -1481,8 +1532,8 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         if let Some(area) = app.hit.detail_card {
             if contains(area, col, row) {
                 // Enter field-nav and pick nearest field from click row
-                let inner_y = row.saturating_sub(area.y.saturating_add(1));
-                let field = (inner_y / 2) as usize;
+                let inner_y = row.saturating_sub(area.y);
+                let field = (inner_y / 4) as usize;
                 let max = overview_field_count(app).saturating_sub(1);
                 app.field_nav = Some(field.min(max));
             }
@@ -1637,15 +1688,13 @@ impl App {
         let Some(entry) = selected_entry(self) else {
             return;
         };
-        let title = display_title(&entry.name);
         let otp = entry
             .totp_secret
             .as_ref()
             .and_then(|secret| generate_totp(secret.as_str(), now()).ok());
         let (label, value) = match nav {
-            0 => ("Login", title),
-            1 => ("Username", entry.username.clone()),
-            2 => (
+            0 => ("Username", entry.username.clone()),
+            1 => (
                 "Email",
                 if entry.email.is_empty() {
                     String::new()
@@ -1653,9 +1702,9 @@ impl App {
                     entry.email.clone()
                 },
             ),
+            2 => ("Password", entry.password.as_str().to_string()),
             3 => ("URL", entry.url.clone()),
-            4 => ("Password", entry.password.as_str().to_string()),
-            5 => ("OTP", otp.unwrap_or_default()),
+            4 => ("OTP code", otp.unwrap_or_default()),
             _ => return,
         };
         if value.is_empty() {
@@ -1777,9 +1826,9 @@ fn overview_field_count(app: &App) -> usize {
         return 0;
     };
     if entry.totp_secret.is_some() {
-        6
-    } else {
         5
+    } else {
+        4
     }
 }
 
@@ -1889,6 +1938,36 @@ fn display_title(name: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn display_url(url: &str) -> String {
+    url.trim()
+        .strip_prefix("https://")
+        .or_else(|| url.trim().strip_prefix("http://"))
+        .unwrap_or(url)
+        .to_string()
+}
+
+fn format_otp(code: &str) -> String {
+    let digits: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() == 6 {
+        format!("{} {}", &digits[..3], &digits[3..])
+    } else {
+        code.to_string()
+    }
+}
+
+fn otp_ring(progress: f64) -> String {
+    // Depleting ring: full when a period starts, empty near refresh.
+    let filled = ((progress.clamp(0.0, 1.0) * 8.0).round() as u8).min(8);
+    match filled {
+        8 => "●",
+        7 | 6 => "◕",
+        5 | 4 => "◑",
+        3 | 2 => "◔",
+        _ => "○",
+    }
+    .to_string()
 }
 
 // --- Visual primitives -------------------------------------------------------
