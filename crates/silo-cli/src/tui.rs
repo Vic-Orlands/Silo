@@ -833,7 +833,10 @@ fn draw_overview_fields(
             if otp_live && *label == "OTP code" {
                 let progress = remaining as f64 / 30.0;
                 row.push(Span::raw("  "));
-                row.push(Span::styled(otp_ring(progress), Style::default().fg(EMERALD)));
+                row.push(Span::styled(
+                    otp_ring(progress),
+                    Style::default().fg(EMERALD),
+                ));
                 row.push(Span::styled(
                     format!(" {remaining}s"),
                     Style::default().fg(MUTED),
@@ -1216,10 +1219,7 @@ fn draw_delete_modal(frame: &mut ratatui::Frame, app: &App) {
                 Span::styled(name, panel.fg(CORAL)),
             ]),
             Line::from(""),
-            Line::from(hint_spans_on(
-                &[("y", "confirm"), ("n", "cancel")],
-                SURFACE,
-            )),
+            Line::from(hint_spans_on(&[("y", "confirm"), ("n", "cancel")], SURFACE)),
         ])
         .style(panel),
         pad(area, 2, 1),
