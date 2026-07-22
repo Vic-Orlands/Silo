@@ -1,18 +1,19 @@
 use clap::Parser;
 use rand::{thread_rng, RngCore};
 use rpassword::prompt_password;
-use serde::{Deserialize, Serialize};
 use silo_core::{generate_totp, load_vault, Vault};
+use silo_protocol::{
+    broker_state_path, read_frame, write_frame, BrokerState, Envelope, MatchItem, Request,
+    Response, PROTOCOL_VERSION,
+};
 use std::{
-    fs,
-    io::{self, Read, Write},
+    fs, io,
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
-use zeroize::Zeroize;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
@@ -22,75 +23,6 @@ struct Args {
     vault: PathBuf,
     #[arg(long, default_value_t = 900)]
     timeout: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct BrokerState {
-    address: String,
-    token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum Request {
-    #[serde(rename = "status")]
-    Status,
-    #[serde(rename = "get_matches")]
-    GetMatches { url: String },
-    #[serde(rename = "get_login")]
-    GetLogin {
-        url: String,
-        #[serde(default)]
-        entry_id: Option<String>,
-    },
-    #[serde(rename = "get_otp")]
-    GetOtp { url: String },
-    #[serde(rename = "lock")]
-    Lock,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Envelope {
-    token: String,
-    request: Request,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Response {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    otp: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    matches: Option<Vec<MatchItem>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    unlocked: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-impl Drop for Response {
-    fn drop(&mut self) {
-        if let Some(mut value) = self.username.take() {
-            value.zeroize();
-        }
-        if let Some(mut value) = self.password.take() {
-            value.zeroize();
-        }
-        if let Some(mut value) = self.otp.take() {
-            value.zeroize();
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct MatchItem {
-    id: String,
-    name: String,
-    username: String,
 }
 
 struct Session {
@@ -186,7 +118,9 @@ fn serve_connection(
         return Ok(());
     };
     let envelope: Envelope = serde_json::from_slice(&bytes)?;
-    let response = if envelope.token != expected_token {
+    let response = if envelope.version != PROTOCOL_VERSION {
+        error_response("unsupported broker protocol version")
+    } else if envelope.token != expected_token {
         Response {
             ok: false,
             username: None,
@@ -324,45 +258,6 @@ fn error_response(error: &str) -> Response {
 
 fn locked_response() -> Response {
     error_response("vault is locked; unlock Silo first")
-}
-
-fn read_frame(stream: &mut impl Read) -> io::Result<Option<Vec<u8>>> {
-    let mut length = [0u8; 4];
-    match stream.read_exact(&mut length) {
-        Ok(()) => {
-            let length = u32::from_le_bytes(length) as usize;
-            if length > 1_000_000 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "message too large",
-                ));
-            }
-            let mut bytes = vec![0u8; length];
-            stream.read_exact(&mut bytes)?;
-            Ok(Some(bytes))
-        }
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
-fn write_frame(stream: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
-    stream.write_all(&(bytes.len() as u32).to_le_bytes())?;
-    stream.write_all(bytes)?;
-    stream.flush()
-}
-
-fn broker_state_path() -> PathBuf {
-    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(runtime).join("silo-broker.json");
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        #[cfg(target_os = "macos")]
-        return PathBuf::from(home).join("Library/Application Support/Silo/broker.json");
-        #[cfg(not(target_os = "macos"))]
-        return PathBuf::from(home).join(".local/state/silo/broker.json");
-    }
-    PathBuf::from("silo-broker.json")
 }
 
 fn write_state(path: &Path, state: &BrokerState) -> io::Result<()> {

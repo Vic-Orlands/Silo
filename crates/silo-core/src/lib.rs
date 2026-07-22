@@ -23,6 +23,10 @@ const FORMAT_VERSION: u8 = 2;
 const LEGACY_FORMAT_VERSION: u8 = 1;
 const SALT_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 24;
+const MAX_MEMORY_KIB: u32 = 1024 * 1024;
+const MAX_ITERATIONS: u32 = 100;
+const MAX_PARALLELISM: u32 = 64;
+const EXPORT_VERSION: u8 = 1;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -97,6 +101,12 @@ pub struct Entry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Vault {
+    pub entries: Vec<Entry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExportDocument {
+    pub version: u8,
     pub entries: Vec<Entry>,
 }
 
@@ -203,7 +213,7 @@ pub fn save_vault(path: impl AsRef<Path>, vault: &Vault, password: &str) -> Resu
 
 pub fn load_vault(path: impl AsRef<Path>, password: &str) -> Result<Vault, Error> {
     let bytes = fs::read(path)?;
-    if bytes.len() < MAGIC.len() + 1 + SALT_LENGTH + NONCE_LENGTH
+    if bytes.len() < MAGIC.len() + 1
         || (&bytes[..MAGIC.len()] != MAGIC && &bytes[..MAGIC.len()] != LEGACY_MAGIC)
     {
         return Err(Error::UnsupportedFormat);
@@ -230,12 +240,20 @@ pub fn load_vault(path: impl AsRef<Path>, password: &str) -> Result<Vault, Error
         }
         _ => return Err(Error::UnsupportedFormat),
     };
-    if memory_kib < 16 * 1024 || iterations == 0 || parallelism == 0 {
+    if !(16 * 1024..=MAX_MEMORY_KIB).contains(&memory_kib)
+        || iterations == 0
+        || iterations > MAX_ITERATIONS
+        || parallelism == 0
+        || parallelism > MAX_PARALLELISM
+    {
         return Err(Error::UnsupportedFormat);
     }
 
     let nonce_start = salt_start + SALT_LENGTH;
     let ciphertext_start = nonce_start + NONCE_LENGTH;
+    if bytes.len() < ciphertext_start + 16 {
+        return Err(Error::UnsupportedFormat);
+    }
     let salt = &bytes[salt_start..nonce_start];
     let nonce = &bytes[nonce_start..ciphertext_start];
     let ciphertext = &bytes[ciphertext_start..];
@@ -274,6 +292,23 @@ pub fn new_entry(
         password: SecretString::new(password),
         totp_secret: totp_secret.map(SecretString::new),
     }
+}
+
+pub fn export_json(vault: &Vault) -> Result<Vec<u8>, Error> {
+    Ok(serde_json::to_vec_pretty(&ExportDocument {
+        version: EXPORT_VERSION,
+        entries: vault.entries.clone(),
+    })?)
+}
+
+pub fn import_json(bytes: &[u8]) -> Result<Vault, Error> {
+    let document: ExportDocument = serde_json::from_slice(bytes)?;
+    if document.version != EXPORT_VERSION {
+        return Err(Error::UnsupportedFormat);
+    }
+    Ok(Vault {
+        entries: document.entries,
+    })
 }
 
 pub fn generate_totp(secret: &str, timestamp: u64) -> Result<String, Error> {
@@ -406,7 +441,12 @@ fn decode_base32_secret(value: &str) -> Result<Vec<u8>, Error> {
         .to_uppercase()
         .trim_end_matches('=')
         .to_string();
-    decode_base32(Alphabet::Rfc4648 { padding: false }, &normalized).ok_or(Error::InvalidTotpSecret)
+    if normalized.is_empty() {
+        return Err(Error::InvalidTotpSecret);
+    }
+    decode_base32(Alphabet::Rfc4648 { padding: false }, &normalized)
+        .filter(|secret| !secret.is_empty())
+        .ok_or(Error::InvalidTotpSecret)
 }
 
 #[derive(Message)]
