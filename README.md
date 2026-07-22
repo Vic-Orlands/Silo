@@ -1,6 +1,6 @@
 # Silo
 
-Silo is a learning project for building a local-first password manager from scratch. The command-line interface and local browser bridge are the primary product surfaces.
+Silo is a local-first password manager from scratch. The command-line interface and local browser bridge are the primary product surfaces. You can also use the Shell for better UX interactivity.
 
 ## Start here
 
