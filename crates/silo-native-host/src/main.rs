@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn open_silo() -> Response {
     let binary = silo_binary();
-    match Command::new(binary).arg("shell").spawn() {
+    match launch_silo(binary) {
         Ok(_) => Response {
             ok: true,
             request_id: None,
@@ -49,6 +49,32 @@ fn open_silo() -> Response {
         },
         Err(error) => error_response(&format!("could not open Silo: {error}")),
     }
+}
+
+fn launch_silo(binary: PathBuf) -> io::Result<std::process::Child> {
+    #[cfg(target_os = "macos")]
+    {
+        let command = format!(
+            "tell application \"Terminal\" to do script {}",
+            applescript_string(&format!("{} shell", shell_quote(&binary)))
+        );
+        Command::new("osascript").args(["-e", &command]).spawn()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Command::new(binary).arg("shell").spawn()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn shell_quote(path: &std::path::Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+#[cfg(target_os = "macos")]
+fn applescript_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn silo_binary() -> PathBuf {
