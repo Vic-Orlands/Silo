@@ -13,4 +13,5 @@ serde_json.workspace = true
 silo-core = { path = "../silo-core" }
 silo-protocol = { path = "../silo-protocol" }
 time.workspace = true
+url.workspace = true
 zeroize.workspace = true

@@ -9,4 +9,9 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 silo-protocol = { path = "../silo-protocol" }
+uuid.workspace = true
+
+[dev-dependencies]
+silo-broker = { path = "../silo-broker" }
+silo-core = { path = "../silo-core" }
 zeroize.workspace = true

@@ -88,6 +88,33 @@
       line-height: 1.5;
     }
 
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .search span {
+      color: var(--faint);
+      font: italic 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .search input {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .search input::placeholder { color: var(--faint); }
+
     .section-label {
       margin: 0 0 6px;
       color: var(--faint);
@@ -136,6 +163,8 @@
     }
 
     .action.secondary { color: var(--mint); }
+
+    .action.tertiary { color: var(--muted); }
 
     .session-action {
       width: 100%;
@@ -188,6 +217,26 @@
     #status.success { color: var(--mint); }
     #status.error { color: var(--danger); }
 
+    .approval, .candidate {
+      margin-top: 10px;
+      padding: 10px;
+      background: var(--surface);
+    }
+
+    .approval p, .candidate p { margin: 0 0 9px; color: var(--muted); }
+
+    .approval-actions, .candidate-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .approval-actions button, .candidate-actions button { flex: 1; }
+
+    .approval-actions button:last-child, .candidate-actions button:last-child {
+      background: transparent;
+      color: var(--muted);
+    }
+
     footer {
       margin-top: 13px;
       color: var(--faint);
@@ -208,14 +257,37 @@
   </header>
 
   <main>
-    <p id="site" class="intro">Silo stays local. Unlock the broker in the Silo app, then choose exactly what to fill.</p>
+    <p id="site" class="intro">Silo stays local. Choose exactly what to fill.</p>
+    <label class="search" for="search">
+      <span>/</span>
+      <input id="search" type="search" autocomplete="off" placeholder="Search logins" aria-label="Search matching logins">
+    </label>
     <p class="section-label">// session access</p>
     <button id="refresh" class="session-action">Check Silo session ↗</button>
     <div id="matches" aria-label="Matching logins"></div>
 
+    <div id="candidate" class="candidate" hidden>
+      <p id="candidate-copy">Save this login to Silo?</p>
+      <div class="candidate-actions">
+        <button id="save-login">Save login</button>
+        <button id="dismiss-candidate">Dismiss</button>
+      </div>
+    </div>
+
+    <div id="approval" class="approval" hidden>
+      <p id="approval-copy">Approve this action?</p>
+      <div class="approval-actions">
+        <button id="approve">Approve</button>
+        <button id="cancel-approval">Cancel</button>
+      </div>
+    </div>
+
     <div class="actions" aria-label="Fill actions">
       <button id="login" class="action"><span>Fill login</span><span>username + password</span></button>
+      <button id="username" class="action"><span>Fill username</span><span>username only</span></button>
+      <button id="password" class="action"><span>Fill password</span><span>password only</span></button>
       <button id="otp" class="action secondary"><span>Fill one-time code</span><span>TOTP</span></button>
+      <button id="open-silo" class="action tertiary"><span>Open Silo</span><span>desktop</span></button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
   </main>

@@ -49,7 +49,12 @@ pub fn run(path: &Path, timeout: u64) -> Result<(), Box<dyn std::error::Error>> 
     }
     enable_raw_mode()?;
     let mut output = stdout();
-    execute!(output, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        output,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        crossterm::event::EnableFocusChange
+    )?;
     let backend = CrosstermBackend::new(output);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -64,6 +69,7 @@ pub fn run(path: &Path, timeout: u64) -> Result<(), Box<dyn std::error::Error>> 
     execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
+        crossterm::event::DisableFocusChange,
         LeaveAlternateScreen
     )?;
     terminal.show_cursor()?;
@@ -90,6 +96,7 @@ struct App {
     status_kind: StatusKind,
     last_activity: Instant,
     timeout: Duration,
+    broker: Option<silo_broker::BrokerHandle>,
     started: Instant,
     hit: HitRegions,
 }
@@ -176,12 +183,13 @@ fn run_loop(
         status_kind: StatusKind::Info,
         last_activity: Instant::now(),
         timeout,
+        broker: None,
         started: Instant::now(),
         hit: HitRegions::default(),
     };
 
     loop {
-        advance_ceremony(&mut app);
+        advance_ceremony(&mut app)?;
         terminal.draw(|frame| draw(frame, &mut app))?;
         if app.last_activity.elapsed() >= app.timeout && matches!(app.screen, Screen::Browse) {
             app.lock_for_inactivity();
@@ -198,6 +206,9 @@ fn run_loop(
                     app.last_activity = Instant::now();
                     handle_mouse(&mut app, mouse);
                 }
+                Event::FocusGained if matches!(app.screen, Screen::Browse) => {
+                    app.lock_for_inactivity();
+                }
                 _ => {}
             }
         }
@@ -205,7 +216,7 @@ fn run_loop(
     Ok(())
 }
 
-fn advance_ceremony(app: &mut App) {
+fn advance_ceremony(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let done = match &app.screen {
         Screen::Ceremony(Ceremony::Unlocking { started, .. }) => {
             started.elapsed() >= Duration::from_millis(1650)
@@ -216,13 +227,20 @@ fn advance_ceremony(app: &mut App) {
         _ => false,
     };
     if !done {
-        return;
+        return Ok(());
     }
 
     match std::mem::replace(&mut app.screen, Screen::Browse) {
         Screen::Ceremony(Ceremony::Unlocking { vault, master, .. }) => {
+            let broker = silo_broker::start_with_vault(
+                vault.clone(),
+                app.path.clone(),
+                master.clone(),
+                app.timeout.as_secs(),
+            )?;
             app.vault = vault;
             app.master = Some(master);
+            app.broker = Some(broker);
             app.detail_open = false;
             app.set_status(
                 "Silo is ready. Select a login and press enter.",
@@ -234,6 +252,7 @@ fn advance_ceremony(app: &mut App) {
         }
         other => app.screen = other,
     }
+    Ok(())
 }
 
 fn draw(frame: &mut ratatui::Frame, app: &mut App) {
@@ -1587,6 +1606,9 @@ impl App {
     }
 
     fn lock_for_inactivity(&mut self) {
+        if let Some(broker) = self.broker.take() {
+            broker.lock();
+        }
         self.set_status("Silo locked due to inactivity.", StatusKind::Info);
         self.master = None;
         self.vault = Vault::new();

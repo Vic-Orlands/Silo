@@ -1,0 +1,10 @@
+{
+  "name": "silo-browser-tests",
+  "private": true,
+  "scripts": {
+    "test:browser": "node scripts/browser-smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

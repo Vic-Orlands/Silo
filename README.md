@@ -62,13 +62,13 @@ cargo run -p silo -- shell
 cargo run -p silo -- shell --timeout 300
 ```
 
-To enable browser autofill, keep the local broker running in a separate terminal:
+To enable browser autofill, open the Silo shell; unlocking it starts the local broker automatically:
 
 ```bash
-cargo run -p silo -- --vault /tmp/silo-test/test.vault broker --timeout 900
+cargo run -p silo -- --vault /tmp/silo-test/test.vault shell --timeout 900
 ```
 
-The broker owns the unlocked vault session. Type `lock` to clear it or `q` to stop the broker. The browser extension only receives approved login/TOTP results; the master password is not entered into or stored by the browser extension.
+The standalone broker command remains available for headless terminal sessions. The broker owns the unlocked vault session, locks after the shared timeout, and clears its state when the owning process exits. The browser extension only receives explicitly approved login/TOTP results; the master password is not entered into or stored by the browser extension.
 
 Inside the shell:
 
@@ -174,5 +174,13 @@ cargo +nightly fuzz run vault_file -- -max_total_time=60
 ```
 
 Tagged releases are built for Linux, macOS, and Windows. The release workflow signs each SHA-256 checksum with Cosign. Configure `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` repository secrets, then verify release signatures with Silo's published public key.
+
+Browser checks require Node.js and Playwright:
+
+```bash
+sh scripts/browser-smoke.sh
+```
+
+The smoke test loads the unpacked extension in Chromium and verifies the popup search field and explicit approval flow. The Rust integration test starts a temporary broker and native host and verifies login, TOTP, save-login, locking, expiry, domain matching, and token rejection.
 
 Silo is pre-release software and has not undergone an independent security audit. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.

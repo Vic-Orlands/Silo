@@ -24,6 +24,8 @@ Thumbs.db
 Desktop.ini
 
 # Editors / IDEs
+.node_modules/
+node_modules/
 .idea/
 .vscode/
 *.swp

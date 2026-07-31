@@ -1381,6 +1381,7 @@ dependencies = [
  "serde_json",
  "silo-broker",
  "silo-core",
+ "silo-protocol",
  "time",
  "uuid",
  "zeroize",
@@ -1398,6 +1399,7 @@ dependencies = [
  "silo-core",
  "silo-protocol",
  "time",
+ "url",
  "zeroize",
 ]
 
@@ -1429,7 +1431,10 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "silo-broker",
+ "silo-core",
  "silo-protocol",
+ "uuid",
  "zeroize",
 ]
 

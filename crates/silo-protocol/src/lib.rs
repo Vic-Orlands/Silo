@@ -8,6 +8,8 @@ use zeroize::Zeroize;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_FRAME_SIZE: usize = 1_000_000;
+pub const DEFAULT_SESSION_TIMEOUT_SECS: u64 = 900;
+pub const REQUEST_TTL_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrokerState {
@@ -18,6 +20,8 @@ pub struct BrokerState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Envelope {
     pub version: u8,
+    pub request_id: String,
+    pub expires_at: u64,
     pub token: String,
     pub request: Request,
 }
@@ -37,6 +41,14 @@ pub enum Request {
     },
     #[serde(rename = "get_otp")]
     GetOtp { url: String },
+    #[serde(rename = "save_login")]
+    SaveLogin {
+        url: String,
+        username: String,
+        password: String,
+    },
+    #[serde(rename = "open_silo")]
+    OpenSilo,
     #[serde(rename = "lock")]
     Lock,
 }
@@ -44,6 +56,8 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response {
     pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,6 +126,9 @@ pub fn write_frame(output: &mut impl Write, message: &[u8]) -> io::Result<()> {
 }
 
 pub fn broker_state_path() -> PathBuf {
+    if let Ok(path) = std::env::var("SILO_BROKER_STATE_PATH") {
+        return PathBuf::from(path);
+    }
     if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
         return PathBuf::from(runtime).join("silo-broker.json");
     }
@@ -137,6 +154,8 @@ mod tests {
     fn envelope_round_trips_with_version() {
         let envelope = Envelope {
             version: PROTOCOL_VERSION,
+            request_id: "request-1".into(),
+            expires_at: 1,
             token: "token".into(),
             request: Request::GetOtp {
                 url: "https://example.com".into(),
@@ -145,6 +164,7 @@ mod tests {
         let encoded = serde_json::to_vec(&envelope).unwrap();
         let decoded: Envelope = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded.version, PROTOCOL_VERSION);
+        assert_eq!(decoded.request_id, "request-1");
     }
 
     #[test]

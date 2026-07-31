@@ -1,8 +1,10 @@
 use clap::Parser;
 use silo_protocol::{
     broker_state_path, read_frame, write_frame, Envelope, Request, Response, PROTOCOL_VERSION,
+    REQUEST_TTL_SECS,
 };
-use std::{io, net::TcpStream, path::PathBuf};
+use std::{io, net::TcpStream, path::PathBuf, process::Command, time::Duration};
+use uuid::Uuid;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -23,12 +25,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         };
         let response = match serde_json::from_slice::<Request>(&message) {
+            Ok(Request::OpenSilo) => open_silo(),
             Ok(request) => request_broker(&request),
             Err(_) => error_response("invalid request"),
         };
         write_frame(&mut output, &serde_json::to_vec(&response)?)?;
     }
     Ok(())
+}
+
+fn open_silo() -> Response {
+    let binary = std::env::var_os("SILO_BIN").unwrap_or_else(|| "silo".into());
+    match Command::new(binary).arg("shell").spawn() {
+        Ok(_) => Response {
+            ok: true,
+            request_id: None,
+            username: None,
+            password: None,
+            otp: None,
+            matches: None,
+            unlocked: None,
+            error: None,
+        },
+        Err(error) => error_response(&format!("could not open Silo: {error}")),
+    }
 }
 
 fn request_broker(request: &Request) -> Response {
@@ -41,8 +61,12 @@ fn request_broker(request: &Request) -> Response {
         Ok(stream) => stream,
         Err(_) => return error_response("Silo broker is not running"),
     };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(REQUEST_TTL_SECS)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(REQUEST_TTL_SECS)));
     let envelope = match serde_json::to_vec(&Envelope {
         version: PROTOCOL_VERSION,
+        request_id: Uuid::new_v4().to_string(),
+        expires_at: now().saturating_add(REQUEST_TTL_SECS),
         token: state.token,
         request: request.clone(),
     }) {
@@ -64,6 +88,7 @@ fn request_broker(request: &Request) -> Response {
 fn error_response(error: &str) -> Response {
     Response {
         ok: false,
+        request_id: None,
         username: None,
         password: None,
         otp: None,
@@ -71,6 +96,13 @@ fn error_response(error: &str) -> Response {
         unlocked: None,
         error: Some(error.into()),
     }
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]

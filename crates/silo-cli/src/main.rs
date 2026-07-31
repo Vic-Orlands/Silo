@@ -33,11 +33,11 @@ struct Cli {
 enum Command {
     Init,
     Shell {
-        #[arg(long, default_value_t = 900)]
+        #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
         timeout: u64,
     },
     Broker {
-        #[arg(long, default_value_t = 900)]
+        #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
         timeout: u64,
     },
     Add {
