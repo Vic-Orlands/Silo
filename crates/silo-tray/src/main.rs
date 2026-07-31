@@ -6,6 +6,7 @@ use silo_protocol::{
 };
 use std::{
     io,
+    io::Cursor,
     net::TcpStream,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -33,9 +34,8 @@ struct Args {
 }
 
 const STATUS_ID: &str = "status";
-const UNLOCK_ID: &str = "unlock";
-const SHELL_ID: &str = "shell";
-const LOCK_ID: &str = "lock";
+const ACTION_ID: &str = "session-action";
+const OPEN_ID: &str = "open";
 const QUIT_ID: &str = "quit";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,16 +56,14 @@ fn run_tray(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     let menu = Menu::new();
-    let status = MenuItem::with_id(STATUS_ID, "Silo · Locked", false, None);
-    let unlock = MenuItem::with_id(UNLOCK_ID, "Unlock Silo", true, None);
-    let shell = MenuItem::with_id(SHELL_ID, "Open shell", true, None);
-    let lock = MenuItem::with_id(LOCK_ID, "Lock Silo", false, None);
-    let quit = MenuItem::with_id(QUIT_ID, "Quit Silo", true, None);
+    let status = MenuItem::with_id(STATUS_ID, "Silo vault: Locked", false, None);
+    let action = MenuItem::with_id(ACTION_ID, "Unlock Silo vault", true, None);
+    let open = MenuItem::with_id(OPEN_ID, "Open Silo vault", true, None);
+    let quit = MenuItem::with_id(QUIT_ID, "Quit Silo vault", true, None);
     menu.append(&status)?;
     menu.append(&PredefinedMenuItem::separator())?;
-    menu.append(&unlock)?;
-    menu.append(&shell)?;
-    menu.append(&lock)?;
+    menu.append(&action)?;
+    menu.append(&open)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&quit)?;
 
@@ -95,37 +93,43 @@ fn run_tray(
                 if last_status != Some(unlocked) {
                     last_status = Some(unlocked);
                     let label = if unlocked {
-                        "Silo · Unlocked"
+                        "Silo vault: Unlocked"
                     } else {
-                        "Silo · Locked"
+                        "Silo vault: Locked"
                     };
                     status.set_text(label);
-                    lock.set_enabled(unlocked);
-                    unlock.set_enabled(!unlocked);
+                    action.set_text(if unlocked {
+                        "Lock Silo vault"
+                    } else {
+                        "Unlock Silo vault"
+                    });
                     if let Some(tray) = tray.as_ref() {
                         let _ = tray.set_tooltip(Some(if unlocked {
-                            "Silo · unlocked"
+                            "Silo vault: unlocked"
                         } else {
-                            "Silo · locked"
+                            "Silo vault: locked"
                         }));
                     }
                 }
                 while let Ok(event) = menu_receiver.try_recv() {
                     match event.id().0.as_str() {
-                        UNLOCK_ID => {
-                            #[cfg(target_os = "macos")]
-                            {
-                                let _ = unlock_with_native_dialog();
-                            }
-                            #[cfg(not(target_os = "macos"))]
-                            {
-                                let _ = open_terminal_command(&cli, &vault, "unlock");
+                        ACTION_ID => {
+                            if unlocked {
+                                broker.lock();
+                            } else {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    let _ = unlock_with_native_dialog();
+                                }
+                                #[cfg(not(target_os = "macos"))]
+                                {
+                                    let _ = open_terminal_command(&cli, &vault, "unlock");
+                                }
                             }
                         }
-                        SHELL_ID => {
+                        OPEN_ID => {
                             let _ = open_terminal_command(&cli, &vault, "shell");
                         }
-                        LOCK_ID => broker.lock(),
                         QUIT_ID => event_loop.exit(),
                         _ => {}
                     }
@@ -283,19 +287,17 @@ fn applescript_string(value: &str) -> String {
 }
 
 fn icon() -> Icon {
-    let size = 18u32;
-    let mut rgba = vec![0u8; (size * size * 4) as usize];
-    for y in 0..size {
-        for x in 0..size {
-            let edge = x == 0 || y == 0 || x == size - 1 || y == size - 1;
-            let mark = (7..=10).contains(&x) && (3..=14).contains(&y);
-            if edge || mark {
-                let index = ((y * size + x) * 4) as usize;
-                rgba[index..index + 4].copy_from_slice(&[184, 242, 203, 255]);
-            }
-        }
-    }
-    Icon::from_rgba(rgba, size, size).expect("valid Silo icon")
+    let decoder = png::Decoder::new(Cursor::new(include_bytes!("../../../assets/silo-icon.png")));
+    let mut reader = decoder.read_info().expect("valid Silo icon PNG");
+    let mut rgba = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("valid Silo icon dimensions")
+    ];
+    let info = reader.next_frame(&mut rgba).expect("read Silo icon PNG");
+    Icon::from_rgba(rgba[..info.buffer_size()].to_vec(), info.width, info.height)
+        .expect("valid Silo tray icon")
 }
 
 fn now() -> u64 {

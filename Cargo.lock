@@ -2809,6 +2809,7 @@ name = "silo-tray"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "png",
  "rand",
  "serde_json",
  "silo-broker",

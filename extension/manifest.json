@@ -16,6 +16,12 @@
   ],
   "action": {
     "default_title": "Fill with Silo",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "32": "icons/silo-icon.png"
+    }
+  },
+  "icons": {
+    "32": "icons/silo-icon.png"
   }
 }

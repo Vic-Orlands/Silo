@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 clap.workspace = true
+png.workspace = true
 rand.workspace = true
 serde_json.workspace = true
 silo-broker = { path = "../silo-broker" }
