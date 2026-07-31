@@ -36,7 +36,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn open_silo() -> Response {
     let binary = silo_binary();
-    match launch_silo(binary) {
+    let vault = silo_protocol::read_state(broker_state_path())
+        .ok()
+        .map(|state| state.vault_path);
+    let vault = vault.filter(|path| !path.as_os_str().is_empty());
+    match launch_silo(binary, vault) {
         Ok(_) => Response {
             ok: true,
             request_id: None,
@@ -51,23 +55,33 @@ fn open_silo() -> Response {
     }
 }
 
-fn launch_silo(binary: PathBuf) -> io::Result<std::process::Child> {
+fn launch_silo(binary: PathBuf, vault: Option<PathBuf>) -> io::Result<std::process::Child> {
+    let mut arguments = vec![shell_quote(&binary)];
+    if let Some(vault) = vault {
+        arguments.push("--vault".into());
+        arguments.push(shell_quote(&vault));
+    }
+    arguments.push("shell".into());
+
     #[cfg(target_os = "macos")]
     {
         let command = format!(
             "tell application \"Terminal\" to do script {}",
-            applescript_string(&format!("{} shell", shell_quote(&binary)))
+            applescript_string(&arguments.join(" "))
         );
         Command::new("osascript").args(["-e", &command]).spawn()
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        Command::new(binary).arg("shell").spawn()
+        let mut command = Command::new(binary);
+        if let Some(vault) = vault {
+            command.args(["--vault", &vault.to_string_lossy()]);
+        }
+        command.arg("shell").spawn()
     }
 }
 
-#[cfg(target_os = "macos")]
 fn shell_quote(path: &std::path::Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }

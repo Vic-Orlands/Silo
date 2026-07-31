@@ -15,6 +15,8 @@ pub const REQUEST_TTL_SECS: u64 = 10;
 pub struct BrokerState {
     pub address: String,
     pub token: String,
+    #[serde(default)]
+    pub vault_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -100,6 +100,8 @@ pub fn start_with_vault(
         return Err("broker timeout must be greater than zero".into());
     }
 
+    let vault_path = fs::canonicalize(&vault_path).unwrap_or(vault_path);
+
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     listener.set_nonblocking(false)?;
 
@@ -115,6 +117,7 @@ pub fn start_with_vault(
         &BrokerState {
             address: listener.local_addr()?.to_string(),
             token: token.clone(),
+            vault_path: vault_path.clone(),
         },
     )?;
 
