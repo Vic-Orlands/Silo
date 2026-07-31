@@ -69,16 +69,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-function watchLoginSubmission() {
-  for (const form of document.forms) {
-    form.addEventListener("submit", () => {
-      const username = document.querySelector('input[type="email"], input[name*="user" i], input[name*="login" i]')?.value;
-      const password = document.querySelector('input[type="password"]')?.value;
-      if (username && password) {
-        chrome.runtime.sendMessage({ type: "save_candidate", url: window.location.href, username, password });
-      }
-    }, { once: true });
+function captureLoginCandidate(form = document) {
+  const username = form.querySelector('input[type="email"], input[name*="user" i], input[name*="login" i]')?.value;
+  const password = form.querySelector('input[type="password"]')?.value;
+  if (username && password) {
+    chrome.runtime.sendMessage({ type: "save_candidate", url: window.location.href, username, password });
   }
+}
+
+function watchLoginSubmission() {
+  document.addEventListener("submit", (event) => captureLoginCandidate(event.target), true);
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const submit = target?.closest('button[type="submit"], input[type="submit"]');
+    if (submit) captureLoginCandidate(submit.form || document);
+  }, true);
 }
 
 watchLoginSubmission();

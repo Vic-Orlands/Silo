@@ -95,6 +95,7 @@ pub struct MatchItem {
     pub id: String,
     pub name: String,
     pub username: String,
+    pub email: String,
 }
 
 pub fn read_frame(input: &mut impl Read) -> io::Result<Option<Vec<u8>>> {

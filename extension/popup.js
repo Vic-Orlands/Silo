@@ -44,18 +44,37 @@ function renderMatches(matches) {
   const container = document.querySelector("#matches");
   container.replaceChildren();
   const query = document.querySelector("#search").value.trim().toLowerCase();
-  const filtered = matches.filter((match) => `${match.name} ${match.username}`.toLowerCase().includes(query));
-  selectedEntryId = filtered[0]?.id || null;
+  const filtered = matches.filter((match) => `${match.name} ${match.username} ${match.email || ""}`.toLowerCase().includes(query));
+  if (!filtered.some((match) => match.id === selectedEntryId)) selectedEntryId = filtered[0]?.id || null;
+  const summary = document.querySelector("#match-summary");
+  summary.hidden = false;
+  summary.textContent = filtered.length === 0
+    ? "No saved accounts match this site."
+    : `${filtered.length} saved account${filtered.length === 1 ? "" : "s"} for this site`;
   for (const match of filtered) {
     const button = document.createElement("button");
     button.className = `match${match.id === selectedEntryId ? " selected" : ""}`;
-    button.innerHTML = `<span>${escapeHtml(match.name)}</span><small>${escapeHtml(match.username)}</small>`;
+    const detail = match.email && match.email !== match.username ? `${match.username} · ${match.email}` : match.username;
+    button.innerHTML = `<span>${escapeHtml(match.name)}</span><small>${escapeHtml(detail)}</small>`;
     button.addEventListener("click", () => {
       selectedEntryId = match.id;
       renderMatches(matches);
       setStatus(`${match.name} selected.`, "success");
     });
     container.append(button);
+  }
+}
+
+function setSessionView(unlocked) {
+  document.querySelector("#locked-view").hidden = unlocked;
+  document.querySelector("#vault-view").hidden = !unlocked;
+  if (!unlocked) {
+    selectedEntryId = null;
+    allMatches = [];
+    document.querySelector("#matches").replaceChildren();
+    document.querySelector("#match-summary").hidden = true;
+    document.querySelector("#candidate").hidden = true;
+    document.querySelector("#approval").hidden = true;
   }
 }
 
@@ -74,11 +93,15 @@ function setStatus(message, kind = "") {
 async function checkSession() {
   const response = await chrome.runtime.sendMessage({ type: "status" })
     .catch((error) => ({ ok: false, error: error.message }));
-  if (!response?.ok) return setStatus(response?.error || "Silo broker unavailable.", "error");
+  if (!response?.ok) {
+    setSessionView(false);
+    return setStatus(response?.error || "Silo broker unavailable.", "error");
+  }
   setStatus(
     response.unlocked ? "Silo is unlocked for this session." : "Silo is locked. Unlock it in the Silo app.",
     response.unlocked ? "success" : "",
   );
+  setSessionView(response.unlocked === true);
   if (response.unlocked) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.url) {
@@ -119,7 +142,14 @@ document.querySelector("#save-login").addEventListener("click", async () => {
 });
 document.querySelector("#open-silo").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "open_silo" })
-    .then((response) => setStatus(response?.ok ? "Silo unlocked." : (response?.error || "Could not unlock Silo."), response?.ok ? "success" : "error"));
+    .then(async (response) => {
+      if (response?.ok) {
+        setStatus("Silo unlocked.", "success");
+        await checkSession();
+      } else {
+        setStatus(response?.error || "Could not unlock Silo.", "error");
+      }
+    });
 });
 showCurrentSite();
 checkSession();

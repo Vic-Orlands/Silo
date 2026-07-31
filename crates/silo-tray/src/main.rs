@@ -82,6 +82,7 @@ fn run_tray(
                         .with_menu(Box::new(menu.clone()))
                         .with_tooltip("Silo · local vault")
                         .with_icon(icon())
+                        .with_icon_as_template(true)
                         .with_menu_on_left_click(true)
                         .with_menu_on_right_click(true)
                         .build()

@@ -298,6 +298,7 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
                     id: entry.id.to_string(),
                     name: entry.name.clone(),
                     username: entry.username.clone(),
+                    email: entry.email.clone(),
                 })
                 .collect();
             Response {
@@ -387,6 +388,17 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
                 session.vault = Some(vault);
                 return locked_response();
             };
+            if vault.entries.iter().any(|entry| {
+                entry.username == username
+                    && entry.password.as_str() == password
+                    && url::Url::parse(&entry.url)
+                        .ok()
+                        .and_then(|entry_url| entry_url.host_str().map(str::to_owned))
+                        .is_some_and(|entry_host| entry_host.eq_ignore_ascii_case(host))
+            }) {
+                session.vault = Some(vault);
+                return error_response("this login is already saved");
+            }
             vault.add(new_entry(
                 host.to_string(),
                 url,
