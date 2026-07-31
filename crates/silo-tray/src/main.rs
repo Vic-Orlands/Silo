@@ -113,7 +113,14 @@ fn run_tray(
                 while let Ok(event) = menu_receiver.try_recv() {
                     match event.id().0.as_str() {
                         UNLOCK_ID => {
-                            let _ = open_terminal_command(&cli, &vault, "unlock");
+                            #[cfg(target_os = "macos")]
+                            {
+                                let _ = unlock_with_native_dialog();
+                            }
+                            #[cfg(not(target_os = "macos"))]
+                            {
+                                let _ = open_terminal_command(&cli, &vault, "unlock");
+                            }
                         }
                         SHELL_ID => {
                             let _ = open_terminal_command(&cli, &vault, "shell");
@@ -153,6 +160,61 @@ fn broker_status() -> io::Result<bool> {
     };
     let response: Response = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
     Ok(response.unlocked == Some(true))
+}
+
+#[cfg(target_os = "macos")]
+fn unlock_with_native_dialog() -> io::Result<()> {
+    let script = r#"
+set resultRecord to display dialog "Unlock Silo" with title "Silo" default answer "" buttons {"Cancel", "Unlock"} default button "Unlock" cancel button "Cancel" with hidden answer
+return text returned of resultRecord
+"#;
+    let output = Command::new("osascript").args(["-e", script]).output()?;
+    if !output.status.success() {
+        return Ok(());
+    }
+    let password = String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string();
+    if password.is_empty() {
+        return Ok(());
+    }
+    let response = broker_request(Request::Unlock { password })?;
+    if response.ok {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            response
+                .error
+                .clone()
+                .unwrap_or_else(|| "could not unlock Silo".into()),
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn broker_request(request: Request) -> io::Result<Response> {
+    let state = read_state(broker_state_path())
+        .map_err(|error| io::Error::new(io::ErrorKind::NotConnected, error))?;
+    let mut stream = TcpStream::connect(state.address)?;
+    let envelope = Envelope {
+        version: PROTOCOL_VERSION,
+        request_id: Uuid::new_v4().to_string(),
+        expires_at: now().saturating_add(REQUEST_TTL_SECS),
+        token: state.token,
+        request,
+    };
+    write_frame(
+        &mut stream,
+        &serde_json::to_vec(&envelope).map_err(io::Error::other)?,
+    )?;
+    let Some(bytes) = read_frame(&mut stream)? else {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "broker returned no response",
+        ));
+    };
+    serde_json::from_slice(&bytes).map_err(io::Error::other)
 }
 
 fn open_terminal_command(
