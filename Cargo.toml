@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host", "crates/silo-broker", "crates/silo-protocol"]
+members = ["crates/silo-core", "crates/silo-cli", "crates/silo-native-host", "crates/silo-broker", "crates/silo-protocol", "crates/silo-tray"]
 exclude = ["fuzz"]
 resolver = "2"
 
@@ -26,3 +26,5 @@ uuid = { version = "1.17", features = ["v4", "serde"] }
 prost = "0.14"
 url = "2.5"
 zeroize = { version = "1.8", features = ["derive"] }
+tray-icon = "0.24.2"
+winit = "0.30"

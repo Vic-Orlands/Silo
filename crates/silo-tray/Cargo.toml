@@ -1,0 +1,15 @@
+[package]
+name = "silo-tray"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+silo-broker = { path = "../silo-broker" }
+silo-protocol = { path = "../silo-protocol" }
+tray-icon.workspace = true
+uuid.workspace = true
+winit.workspace = true

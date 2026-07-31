@@ -87,6 +87,16 @@ The browser extension's **Unlock Silo** action opens a short-lived unlock sessio
 cargo run -p silo -- --vault /tmp/silo-test/test.vault shell --timeout 900
 ```
 
+For the always-visible desktop companion, install the tray process instead of the broker-only service:
+
+```bash
+SILO_TRAY_BIN="$PWD/target/debug/silo-tray" \
+SILO_CLI_BIN="$PWD/target/debug/silo" \
+  sh scripts/install-tray.sh /tmp/silo-test/test.vault
+```
+
+Silo then appears in the macOS menu bar, Windows notification area, or Linux system tray. Its menu shows the current locked/unlocked state and provides **Unlock Silo**, **Open shell**, **Lock Silo**, and **Quit Silo**. The tray process owns the broker, so quitting it also removes the broker session. Use the tray service or the broker-only service, not both for the same vault.
+
 The broker owns the unlocked vault session, locks after the shared timeout, clears the decrypted vault and master password on lock, and removes its state when the owning process exits. The browser extension only receives explicitly approved login/TOTP results; the master password is not entered into or stored by the browser extension.
 
 Inside the shell:
@@ -152,6 +162,7 @@ It reports the source format, algorithm, digit count, period, decoded byte lengt
 - `crates/silo-broker`: unlocked local session, timeout, lock, and browser request policy.
 - `crates/silo-protocol`: versioned JSON requests, responses, broker state, and native-messaging frames shared by the broker and host.
 - `crates/silo-native-host`: native messaging bridge process.
+- `crates/silo-tray`: cross-platform menu-bar/system-tray companion that owns the background broker.
 - `extension`: browser bridge with explicit popup actions for login and one-time-code filling.
 
 ## Browser bridge installation
