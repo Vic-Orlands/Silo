@@ -23,12 +23,14 @@ struct Args {
     vault: PathBuf,
     #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
     timeout: u64,
+    #[arg(long)]
+    background: bool,
 }
 
 struct Session {
     vault: Option<Vault>,
     vault_path: PathBuf,
-    master: Zeroizing<String>,
+    master: Option<Zeroizing<String>>,
     last_activity: Instant,
     timeout: Duration,
 }
@@ -42,6 +44,7 @@ impl BrokerHandle {
     pub fn lock(&self) {
         if let Ok(mut session) = self.session.lock() {
             session.vault = None;
+            session.master = None;
             session.last_activity = Instant::now();
         }
     }
@@ -57,7 +60,18 @@ impl Drop for BrokerHandle {
 #[allow(dead_code)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if args.background {
+        return run_background(args.vault, args.timeout);
+    }
     run_with_config(args.vault, args.timeout)
+}
+
+pub fn run_background(vault_path: PathBuf, timeout: u64) -> Result<(), Box<dyn std::error::Error>> {
+    let _broker = start_locked(vault_path, timeout)?;
+    println!("Silo broker is running in the background and locked.");
+    loop {
+        thread::sleep(Duration::from_secs(3600));
+    }
 }
 
 pub fn run_with_config(
@@ -100,6 +114,29 @@ pub fn start_with_vault(
         return Err("broker timeout must be greater than zero".into());
     }
 
+    start_session(Some(vault), vault_path, Some(master), timeout)
+}
+
+pub fn start_locked(
+    vault_path: PathBuf,
+    timeout: u64,
+) -> Result<BrokerHandle, Box<dyn std::error::Error>> {
+    if !vault_path.is_file() {
+        return Err(format!("vault not found: {}", vault_path.display()).into());
+    }
+    start_session(None, vault_path, None, timeout)
+}
+
+fn start_session(
+    vault: Option<Vault>,
+    vault_path: PathBuf,
+    master: Option<Zeroizing<String>>,
+    timeout: u64,
+) -> Result<BrokerHandle, Box<dyn std::error::Error>> {
+    if timeout == 0 {
+        return Err("broker timeout must be greater than zero".into());
+    }
+
     let vault_path = fs::canonicalize(&vault_path).unwrap_or(vault_path);
 
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
@@ -122,7 +159,7 @@ pub fn start_with_vault(
     )?;
 
     let session = Arc::new(Mutex::new(Session {
-        vault: Some(vault),
+        vault,
         vault_path,
         master,
         last_activity: Instant::now(),
@@ -189,6 +226,7 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
     };
     if session.last_activity.elapsed() >= session.timeout {
         session.vault = None;
+        session.master = None;
     }
     match request {
         Request::Status => Response {
@@ -203,6 +241,7 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
         },
         Request::Lock => {
             session.vault = None;
+            session.master = None;
             session.last_activity = Instant::now();
             Response {
                 ok: true,
@@ -213,6 +252,38 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
                 matches: None,
                 unlocked: Some(false),
                 error: None,
+            }
+        }
+        Request::Unlock { password } => {
+            if session.vault.is_some() {
+                return Response {
+                    ok: true,
+                    request_id: None,
+                    username: None,
+                    password: None,
+                    otp: None,
+                    matches: None,
+                    unlocked: Some(true),
+                    error: None,
+                };
+            }
+            match load_vault(&session.vault_path, &password) {
+                Ok(vault) => {
+                    session.vault = Some(vault);
+                    session.master = Some(Zeroizing::new(password));
+                    session.last_activity = Instant::now();
+                    Response {
+                        ok: true,
+                        request_id: None,
+                        username: None,
+                        password: None,
+                        otp: None,
+                        matches: None,
+                        unlocked: Some(true),
+                        error: None,
+                    }
+                }
+                Err(_) => error_response("could not unlock vault: invalid password"),
             }
         }
         Request::GetMatches { url } => {
@@ -312,6 +383,10 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
             let Some(mut vault) = session.vault.take() else {
                 return locked_response();
             };
+            let Some(master) = session.master.as_ref() else {
+                session.vault = Some(vault);
+                return locked_response();
+            };
             vault.add(new_entry(
                 host.to_string(),
                 url,
@@ -320,7 +395,7 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
                 password,
                 None,
             ));
-            if let Err(error) = save_vault(&session.vault_path, &vault, &session.master) {
+            if let Err(error) = save_vault(&session.vault_path, &vault, master) {
                 session.vault = Some(vault);
                 return error_response(&format!("could not save login: {error}"));
             }
@@ -399,7 +474,7 @@ mod tests {
         let session = Arc::new(Mutex::new(Session {
             vault: None,
             vault_path: PathBuf::from("test.vault"),
-            master: Zeroizing::new(String::from("test")),
+            master: Some(Zeroizing::new(String::from("test"))),
             last_activity: Instant::now(),
             timeout: Duration::from_secs(900),
         }));
@@ -422,7 +497,7 @@ mod tests {
         let session = Arc::new(Mutex::new(Session {
             vault: Some(Vault::new()),
             vault_path: PathBuf::from("test.vault"),
-            master: Zeroizing::new(String::from("test")),
+            master: Some(Zeroizing::new(String::from("test"))),
             last_activity: Instant::now() - Duration::from_secs(10),
             timeout: Duration::from_secs(1),
         }));
@@ -444,7 +519,7 @@ mod tests {
         let session = Arc::new(Mutex::new(Session {
             vault: Some(vault),
             vault_path: PathBuf::from("test.vault"),
-            master: Zeroizing::new(String::from("test")),
+            master: Some(Zeroizing::new(String::from("test"))),
             last_activity: Instant::now(),
             timeout: Duration::from_secs(900),
         }));
@@ -455,5 +530,40 @@ mod tests {
             &session,
         );
         assert_eq!(response.matches.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn locked_session_unlocks_against_its_recorded_vault() {
+        let path = std::env::temp_dir().join(format!(
+            "silo-broker-unlock-{}-{}.vault",
+            std::process::id(),
+            now()
+        ));
+        save_vault(&path, &Vault::new(), "correct password").unwrap();
+        let session = Arc::new(Mutex::new(Session {
+            vault: None,
+            vault_path: path.clone(),
+            master: None,
+            last_activity: Instant::now(),
+            timeout: Duration::from_secs(900),
+        }));
+
+        let wrong = handle_request(
+            Request::Unlock {
+                password: "wrong password".into(),
+            },
+            &session,
+        );
+        assert!(!wrong.ok);
+
+        let unlocked = handle_request(
+            Request::Unlock {
+                password: "correct password".into(),
+            },
+            &session,
+        );
+        assert!(unlocked.ok);
+        assert_eq!(unlocked.unlocked, Some(true));
+        fs::remove_file(path).unwrap();
     }
 }

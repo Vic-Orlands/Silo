@@ -2,6 +2,7 @@ param(
   [string]$ExtensionId = "YOUR_EXTENSION_ID",
   [string]$HostBinary = "$PWD\target\debug\silo-native-host",
   [string]$SiloBinary = "",
+  [string]$VaultPath = "",
   [ValidateSet("chrome", "firefox")][string]$Browser = "chrome"
 )
 
@@ -16,6 +17,7 @@ $binaryPath = (Resolve-Path $HostBinary).Path
 $cliPath = if ($SiloBinary) { (Resolve-Path $SiloBinary).Path } else { (Get-Command silo -ErrorAction SilentlyContinue).Source }
 $launcherContents = "@echo off`r`n"
 if ($cliPath) { $launcherContents += "set SILO_BIN=$cliPath`r`n" }
+if ($VaultPath) { $launcherContents += "set SILO_VAULT=$VaultPath`r`n" }
 $launcherContents += "`"$binaryPath`"`r`n"
 $launcherContents | Set-Content -Encoding ASCII $launcher
 $manifest = @{
@@ -32,4 +34,4 @@ if ($Browser -eq "firefox") {
 $manifest = $manifest | ConvertTo-Json
 $manifest | Set-Content -Encoding UTF8 (Join-Path $hostDir "com.silo.native.json")
 Write-Host "Installed com.silo.native at $hostDir"
-Write-Host "The broker must be running before browser requests are made."
+Write-Host "The native host can start a locked broker when no broker is running."

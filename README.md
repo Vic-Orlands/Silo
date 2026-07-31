@@ -47,7 +47,11 @@ silo remove <name>                Delete an entry after confirmation
 silo remove <name> --yes          Delete without confirmation
 silo generate                     Generate a password without saving it
 silo shell                        Unlock once and work interactively
-silo broker                       Unlock a local browser session broker
+silo broker                       Run the local browser session broker
+silo broker --background          Run a locked broker without a terminal session
+silo unlock                       Unlock the background broker
+silo lock                         Lock the background broker
+silo status                       Show broker state
 silo copy <name> password          Copy a secret and clear it later
 silo export <file>                Export plaintext JSON deliberately
 silo import <file>                Import plaintext JSON into the vault
@@ -62,13 +66,28 @@ cargo run -p silo -- shell
 cargo run -p silo -- shell --timeout 300
 ```
 
-To enable browser autofill, open the Silo shell; unlocking it starts the local broker automatically:
+For browser use without keeping a shell open, install the broker as a login service. It starts locked, keeps running in the background, and holds decrypted vault data only after you unlock it:
+
+```bash
+cargo install --path crates/silo-cli --force
+SILO_CLI_BIN="$HOME/.cargo/bin/silo" \
+  sh scripts/install-broker.sh /tmp/silo-test/test.vault
+```
+
+The macOS LaunchAgent or Linux user service starts the broker automatically. On Windows, use `scripts/install-broker.ps1`. Unlock it when needed:
+
+```bash
+silo unlock
+silo status
+```
+
+The browser extension's **Unlock Silo** action opens a short-lived unlock session. It does not keep a management shell running. The shell remains available for full vault management and also starts an unlocked broker for that interactive session:
 
 ```bash
 cargo run -p silo -- --vault /tmp/silo-test/test.vault shell --timeout 900
 ```
 
-The standalone broker command remains available for headless terminal sessions. The broker owns the unlocked vault session, locks after the shared timeout, and clears its state when the owning process exits. The browser extension only receives explicitly approved login/TOTP results; the master password is not entered into or stored by the browser extension.
+The broker owns the unlocked vault session, locks after the shared timeout, clears the decrypted vault and master password on lock, and removes its state when the owning process exits. The browser extension only receives explicitly approved login/TOTP results; the master password is not entered into or stored by the browser extension.
 
 Inside the shell:
 
@@ -144,13 +163,14 @@ cargo build -p silo-native-host
 sh scripts/install-native-host.sh YOUR_EXTENSION_ID
 ```
 
-On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker. Start the broker before using the browser extension; the extension reports whether the broker session is available. For a release build, set `SILO_NATIVE_HOST_BIN=target/release/silo-native-host` before running the installer.
+On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker and can start a locked broker if the login service is not already running. For a release build, set `SILO_NATIVE_HOST_BIN=target/release/silo-native-host` before running the installer.
 
 The installer records the Silo CLI path for the extension's `Open Silo` action. Set `SILO_CLI_BIN` when the CLI is not available through the browser's `PATH`:
 
 ```bash
 SILO_NATIVE_HOST_BIN="$PWD/target/debug/silo-native-host" \
 SILO_CLI_BIN="$(command -v silo)" \
+SILO_VAULT="/tmp/silo-test/test.vault" \
 sh scripts/install-native-host.sh YOUR_EXTENSION_ID chrome
 ```
 

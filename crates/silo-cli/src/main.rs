@@ -9,11 +9,13 @@ use silo_core::{
 use std::{
     fs,
     io::{self, Write},
+    net::TcpStream,
     path::{Path, PathBuf},
     thread,
     time::Duration,
 };
 use time::OffsetDateTime;
+use uuid::Uuid;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
@@ -39,7 +41,12 @@ enum Command {
     Broker {
         #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
         timeout: u64,
+        #[arg(long)]
+        background: bool,
     },
+    Unlock,
+    Lock,
+    Status,
     Add {
         name: String,
         #[arg(long)]
@@ -142,7 +149,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Command::Init => init(&cli.vault)?,
         Command::Shell { timeout } => run_shell(&cli.vault, timeout)?,
-        Command::Broker { timeout } => silo_broker::run_with_config(cli.vault, timeout)?,
+        Command::Broker {
+            timeout,
+            background,
+        } => {
+            if background {
+                silo_broker::run_background(cli.vault, timeout)?;
+            } else {
+                silo_broker::run_with_config(cli.vault, timeout)?;
+            }
+        }
+        Command::Unlock => unlock_broker()?,
+        Command::Lock => lock_broker()?,
+        Command::Status => status_broker()?,
         Command::Add {
             name,
             url,
@@ -419,6 +438,84 @@ fn import_vault(
 
 fn run_shell(path: &Path, timeout: u64) -> Result<(), Box<dyn std::error::Error>> {
     tui::run(path, timeout)
+}
+
+fn unlock_broker() -> Result<(), Box<dyn std::error::Error>> {
+    let password = Zeroizing::new(prompt_password("Silo password: ")?.to_string());
+    let response = broker_request(silo_protocol::Request::Unlock {
+        password: password.to_string(),
+    })?;
+    if !response.ok {
+        return Err(response
+            .error
+            .clone()
+            .unwrap_or_else(|| "could not unlock Silo".into())
+            .into());
+    }
+    println!("Silo is unlocked for this session.");
+    Ok(())
+}
+
+fn lock_broker() -> Result<(), Box<dyn std::error::Error>> {
+    let response = broker_request(silo_protocol::Request::Lock)?;
+    if !response.ok {
+        return Err(response
+            .error
+            .clone()
+            .unwrap_or_else(|| "could not lock Silo".into())
+            .into());
+    }
+    println!("Silo is locked.");
+    Ok(())
+}
+
+fn status_broker() -> Result<(), Box<dyn std::error::Error>> {
+    let response = broker_request(silo_protocol::Request::Status)?;
+    if !response.ok {
+        return Err(response
+            .error
+            .clone()
+            .unwrap_or_else(|| "could not read Silo status".into())
+            .into());
+    }
+    println!(
+        "Silo broker: {}",
+        if response.unlocked == Some(true) {
+            "unlocked"
+        } else {
+            "locked"
+        }
+    );
+    Ok(())
+}
+
+fn broker_request(
+    request: silo_protocol::Request,
+) -> Result<silo_protocol::Response, Box<dyn std::error::Error>> {
+    let state = silo_protocol::read_state(silo_protocol::broker_state_path())
+        .map_err(|_| "Silo broker is not running; start `silo broker --background` first")?;
+    let mut stream =
+        TcpStream::connect(&state.address).map_err(|_| "Silo broker is not reachable")?;
+    let envelope = silo_protocol::Envelope {
+        version: silo_protocol::PROTOCOL_VERSION,
+        request_id: Uuid::new_v4().to_string(),
+        expires_at: unix_now().saturating_add(silo_protocol::REQUEST_TTL_SECS),
+        token: state.token,
+        request,
+    };
+    let encoded = serde_json::to_vec(&envelope)?;
+    silo_protocol::write_frame(&mut stream, &encoded)?;
+    let Some(bytes) = silo_protocol::read_frame(&mut stream)? else {
+        return Err("Silo broker returned no response".into());
+    };
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn unlock(path: &Path) -> Result<(Vault, Zeroizing<String>), Box<dyn std::error::Error>> {

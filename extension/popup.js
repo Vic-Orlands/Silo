@@ -119,7 +119,7 @@ document.querySelector("#save-login").addEventListener("click", async () => {
 });
 document.querySelector("#open-silo").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "open_silo" })
-    .then((response) => setStatus(response?.ok ? "Silo is opening." : (response?.error || "Could not open Silo."), response?.ok ? "success" : "error"));
+    .then((response) => setStatus(response?.ok ? "Unlock window opened." : (response?.error || "Could not unlock Silo."), response?.ok ? "success" : "error"));
 });
 showCurrentSite();
 checkSession();

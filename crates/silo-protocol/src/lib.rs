@@ -53,6 +53,8 @@ pub enum Request {
     OpenSilo,
     #[serde(rename = "lock")]
     Lock,
+    #[serde(rename = "unlock")]
+    Unlock { password: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
