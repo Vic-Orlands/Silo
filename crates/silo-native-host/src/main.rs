@@ -51,19 +51,52 @@ fn open_silo() -> Response {
     if let Err(error) = ensure_broker(&binary, vault.as_ref()) {
         return error_response(&error);
     }
-    match launch_silo(binary, vault, "unlock") {
-        Ok(_) => Response {
-            ok: true,
-            request_id: None,
-            username: None,
-            password: None,
-            otp: None,
-            matches: None,
-            unlocked: None,
-            error: None,
-        },
-        Err(error) => error_response(&format!("could not open Silo: {error}")),
+
+    #[cfg(target_os = "macos")]
+    {
+        unlock_with_native_dialog()
     }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        match launch_silo(binary, vault, "unlock") {
+            Ok(_) => Response {
+                ok: true,
+                request_id: None,
+                username: None,
+                password: None,
+                otp: None,
+                matches: None,
+                unlocked: None,
+                error: None,
+            },
+            Err(error) => error_response(&format!("could not open Silo: {error}")),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn unlock_with_native_dialog() -> Response {
+    let script = r#"
+set resultRecord to display dialog "Unlock Silo" with title "Silo" default answer "" buttons {"Cancel", "Unlock"} default button "Unlock" cancel button "Cancel" with hidden answer
+return text returned of resultRecord
+"#;
+    let output = match Command::new("osascript").args(["-e", script]).output() {
+        Ok(output) => output,
+        Err(error) => {
+            return error_response(&format!("could not open Silo unlock dialog: {error}"))
+        }
+    };
+    if !output.status.success() {
+        return error_response("Silo unlock cancelled");
+    }
+    let password = String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string();
+    if password.is_empty() {
+        return error_response("Silo password cannot be empty");
+    }
+    request_broker(&Request::Unlock { password })
 }
 
 fn ensure_broker(binary: &PathBuf, vault: Option<&PathBuf>) -> Result<(), String> {
@@ -103,44 +136,17 @@ fn ensure_broker(binary: &PathBuf, vault: Option<&PathBuf>) -> Result<(), String
     Err("Silo broker did not start".into())
 }
 
+#[cfg(not(target_os = "macos"))]
 fn launch_silo(
     binary: PathBuf,
     vault: Option<PathBuf>,
     subcommand: &str,
 ) -> io::Result<std::process::Child> {
-    let mut arguments = vec![shell_quote(&binary)];
+    let mut command = Command::new(binary);
     if let Some(vault) = vault {
-        arguments.push("--vault".into());
-        arguments.push(shell_quote(&vault));
+        command.arg("--vault").arg(vault);
     }
-    arguments.push(subcommand.into());
-
-    #[cfg(target_os = "macos")]
-    {
-        let command = format!(
-            "tell application \"Terminal\" to do script {}",
-            applescript_string(&arguments.join(" "))
-        );
-        Command::new("osascript").args(["-e", &command]).spawn()
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let mut command = Command::new(binary);
-        if let Some(vault) = vault {
-            command.arg("--vault").arg(vault);
-        }
-        command.arg(subcommand).spawn()
-    }
-}
-
-fn shell_quote(path: &std::path::Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
-}
-
-#[cfg(target_os = "macos")]
-fn applescript_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    command.arg(subcommand).spawn()
 }
 
 fn silo_binary() -> PathBuf {
