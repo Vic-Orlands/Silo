@@ -1,5 +1,13 @@
+async function sendToExtension(message) {
+  try {
+    return await chrome.runtime.sendMessage(message);
+  } catch (_) {
+    return { ok: false, error: "Silo extension was reloaded; refresh this page." };
+  }
+}
+
 async function requestLogin(entryId = null) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendToExtension({
     type: "get_login",
     url: window.location.href,
     entry_id: entryId
@@ -22,7 +30,7 @@ async function requestLogin(entryId = null) {
 }
 
 async function requestOtp(entryId = null) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendToExtension({
     type: "get_otp",
     url: window.location.href,
     entry_id: entryId
@@ -37,7 +45,7 @@ async function requestOtp(entryId = null) {
 }
 
 async function fillField(kind, entryId = null) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendToExtension({
     type: "get_login",
     url: window.location.href,
     entry_id: entryId
@@ -73,7 +81,7 @@ function captureLoginCandidate(form = document) {
   const username = form.querySelector('input[type="email"], input[name*="user" i], input[name*="login" i]')?.value;
   const password = form.querySelector('input[type="password"]')?.value;
   if (username && password) {
-    chrome.runtime.sendMessage({ type: "save_candidate", url: window.location.href, username, password });
+    void sendToExtension({ type: "save_candidate", url: window.location.href, username, password });
   }
 }
 
