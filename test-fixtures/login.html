@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silo local login fixture</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { display: grid; min-height: 100vh; place-items: center; margin: 0; background: #101210; color: #f1f5f1; }
+    main { width: min(360px, calc(100% - 40px)); }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { color: #aab2aa; }
+    form { display: grid; gap: 12px; margin-top: 24px; }
+    label { display: grid; gap: 5px; color: #aab2aa; font-size: 13px; }
+    input, button { min-height: 40px; border: 1px solid #3a413b; border-radius: 6px; padding: 0 11px; background: #191c19; color: #f1f5f1; font: inherit; }
+    button { border: 0; background: #b8f2cb; color: #0a1b10; font-weight: 700; cursor: pointer; }
+    #result { min-height: 24px; color: #b8f2cb; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Local login fixture</h1>
+    <p>This page exists only for testing Silo browser autofill and save-login behavior.</p>
+    <form id="login-form">
+      <label>Username <input name="username" type="email" autocomplete="username" value=""></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" value=""></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p id="result" role="status"></p>
+  </main>
+  <script>
+    document.querySelector("#login-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.querySelector("#result").textContent = "Submitted locally.";
+    });
+  </script>
+</body>
+</html>
