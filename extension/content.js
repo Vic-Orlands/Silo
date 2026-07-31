@@ -1,6 +1,8 @@
 async function sendToExtension(message) {
   try {
-    return await chrome.runtime.sendMessage(message);
+    const runtime = chrome.runtime;
+    if (!runtime?.id) return { ok: false, error: "Silo extension context is unavailable." };
+    return await runtime.sendMessage(message);
   } catch (_) {
     return { ok: false, error: "Silo extension was reloaded; refresh this page." };
   }
@@ -62,20 +64,27 @@ async function fillField(kind, entryId = null) {
   return { ok: true };
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "fill") {
-    requestLogin(message.entryId || null).then(sendResponse);
-    return true;
+function registerMessageListener() {
+  try {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === "fill") {
+        requestLogin(message.entryId || null).then(sendResponse);
+        return true;
+      }
+      if (message.type === "fill_otp") {
+        requestOtp(message.entryId || null).then(sendResponse);
+        return true;
+      }
+      if (message.type === "fill_username" || message.type === "fill_password") {
+        fillField(message.type === "fill_username" ? "username" : "password", message.entryId || null).then(sendResponse);
+        return true;
+      }
+    });
+  } catch (_) {
+    return false;
   }
-  if (message.type === "fill_otp") {
-    requestOtp(message.entryId || null).then(sendResponse);
-    return true;
-  }
-  if (message.type === "fill_username" || message.type === "fill_password") {
-    fillField(message.type === "fill_username" ? "username" : "password", message.entryId || null).then(sendResponse);
-    return true;
-  }
-});
+  return true;
+}
 
 function captureLoginCandidate(form = document) {
   const username = form.querySelector('input[type="email"], input[name*="user" i], input[name*="login" i]')?.value;
@@ -94,4 +103,5 @@ function watchLoginSubmission() {
   }, true);
 }
 
+registerMessageListener();
 watchLoginSubmission();
