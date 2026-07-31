@@ -175,4 +175,4 @@ cargo +nightly fuzz run vault_file -- -max_total_time=60
 
 Tagged releases are built for Linux, macOS, and Windows. The release workflow signs each SHA-256 checksum with Cosign. Configure `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` repository secrets, then verify release signatures with Silo's published public key.
 
-This remains an educational prototype, not an audited password manager. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.
+Silo is pre-release software and has not undergone an independent security audit. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.
