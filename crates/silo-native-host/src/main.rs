@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn open_silo() -> Response {
-    let binary = std::env::var_os("SILO_BIN").unwrap_or_else(|| "silo".into());
+    let binary = silo_binary();
     match Command::new(binary).arg("shell").spawn() {
         Ok(_) => Response {
             ok: true,
@@ -49,6 +49,19 @@ fn open_silo() -> Response {
         },
         Err(error) => error_response(&format!("could not open Silo: {error}")),
     }
+}
+
+fn silo_binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("SILO_BIN") {
+        return PathBuf::from(path);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let cargo_binary = PathBuf::from(home).join(".cargo/bin/silo");
+        if cargo_binary.is_file() {
+            return cargo_binary;
+        }
+    }
+    PathBuf::from("silo")
 }
 
 fn request_broker(request: &Request) -> Response {

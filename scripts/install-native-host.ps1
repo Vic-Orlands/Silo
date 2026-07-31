@@ -1,6 +1,7 @@
 param(
   [string]$ExtensionId = "YOUR_EXTENSION_ID",
   [string]$HostBinary = "$PWD\target\debug\silo-native-host",
+  [string]$SiloBinary = "",
   [ValidateSet("chrome", "firefox")][string]$Browser = "chrome"
 )
 
@@ -12,7 +13,11 @@ $hostDir = if ($Browser -eq "firefox") {
 New-Item -ItemType Directory -Force -Path $hostDir | Out-Null
 $launcher = Join-Path $hostDir "silo-native-host-launcher.cmd"
 $binaryPath = (Resolve-Path $HostBinary).Path
-"@echo off`r`n`"$binaryPath`"`r`n" | Set-Content -Encoding ASCII $launcher
+$cliPath = if ($SiloBinary) { (Resolve-Path $SiloBinary).Path } else { (Get-Command silo -ErrorAction SilentlyContinue).Source }
+$launcherContents = "@echo off`r`n"
+if ($cliPath) { $launcherContents += "set SILO_BIN=$cliPath`r`n" }
+$launcherContents += "`"$binaryPath`"`r`n"
+$launcherContents | Set-Content -Encoding ASCII $launcher
 $manifest = @{
   name = "com.silo.native"
   description = "Silo native messaging host"

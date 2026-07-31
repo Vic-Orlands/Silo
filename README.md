@@ -146,6 +146,14 @@ sh scripts/install-native-host.sh YOUR_EXTENSION_ID
 
 On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker. Start the broker before using the browser extension; the extension reports whether the broker session is available. For a release build, set `SILO_NATIVE_HOST_BIN=target/release/silo-native-host` before running the installer.
 
+The installer records the Silo CLI path for the extension's `Open Silo` action. Set `SILO_CLI_BIN` when the CLI is not available through the browser's `PATH`:
+
+```bash
+SILO_NATIVE_HOST_BIN="$PWD/target/debug/silo-native-host" \
+SILO_CLI_BIN="$(command -v silo)" \
+sh scripts/install-native-host.sh YOUR_EXTENSION_ID chrome
+```
+
 Rust concepts to notice:
 
 - `struct` models a vault entry.

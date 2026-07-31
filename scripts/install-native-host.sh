@@ -2,6 +2,7 @@
 set -eu
 
 SILO_BIN=${SILO_NATIVE_HOST_BIN:-"$(pwd)/target/debug/silo-native-host"}
+SILO_CLI_BIN=${SILO_CLI_BIN:-"$(command -v silo 2>/dev/null || true)"}
 EXTENSION_ID=${1:-YOUR_EXTENSION_ID}
 BROWSER=${2:-chrome}
 HOST_NAME=com.silo.native
@@ -18,10 +19,15 @@ esac
 
 mkdir -p "$HOST_DIR"
 LAUNCHER="$HOST_DIR/silo-native-host-launcher"
-python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$EXTENSION_ID" "$LAUNCHER" "$BROWSER" <<'PY'
+python3 - "$HOST_DIR/$HOST_NAME.json" "$SILO_BIN" "$SILO_CLI_BIN" "$EXTENSION_ID" "$LAUNCHER" "$BROWSER" <<'PY'
 import json, pathlib, sys
-output, binary, extension_id, launcher, browser = sys.argv[1:]
-pathlib.Path(launcher).write_text(f'#!/usr/bin/env sh\nexec {json.dumps(str(pathlib.Path(binary).expanduser().resolve()))}\n')
+output, binary, cli_binary, extension_id, launcher, browser = sys.argv[1:]
+native_path = str(pathlib.Path(binary).expanduser().resolve())
+launcher_contents = '#!/usr/bin/env sh\n'
+if cli_binary:
+    launcher_contents += f'export SILO_BIN={json.dumps(str(pathlib.Path(cli_binary).expanduser().resolve()))}\n'
+launcher_contents += f'exec {json.dumps(native_path)}\n'
+pathlib.Path(launcher).write_text(launcher_contents)
 pathlib.Path(launcher).chmod(0o700)
 manifest = {
     "name": "com.silo.native",
