@@ -675,6 +675,8 @@ fn now() -> u64 {
 }
 
 fn set_private_permissions(path: &Path) -> Result<(), io::Error> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
