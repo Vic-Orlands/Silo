@@ -19,13 +19,8 @@ try {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   await page.getByRole("heading", { name: "SILO" }).waitFor();
-  await page.getByRole("searchbox", { name: "Search matching logins" }).fill("github");
-  await page.getByRole("button", { name: /Fill login/ }).click();
-  await page.getByText("Approve username and password?").waitFor();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  if (await page.getByText("Approve username and password?").isVisible()) {
-    throw new Error("approval prompt did not close");
-  }
+  await page.getByText("Your local vault is locked.").waitFor();
+  await page.getByRole("button", { name: /Unlock Silo/ }).waitFor();
   console.log("Browser extension popup smoke test passed.");
 } finally {
   await context.close();

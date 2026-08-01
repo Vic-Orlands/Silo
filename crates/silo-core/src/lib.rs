@@ -561,6 +561,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 }
 
 fn set_private_permissions(path: &Path) -> Result<(), std::io::Error> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
