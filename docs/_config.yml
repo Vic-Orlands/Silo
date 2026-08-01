@@ -1,0 +1,8 @@
+title: Silo
+description: A local-first password manager for the terminal, desktop, and browser.
+theme: jekyll-theme-primer
+markdown: kramdown
+show_downloads: false
+
+plugins:
+  - jekyll-seo-tag
