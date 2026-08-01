@@ -461,6 +461,8 @@ fn write_state(path: &Path, state: &BrokerState) -> io::Result<()> {
 }
 
 fn set_private_permissions(path: &Path) -> io::Result<()> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
