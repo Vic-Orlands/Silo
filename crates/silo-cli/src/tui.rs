@@ -29,6 +29,8 @@ use zeroize::Zeroizing;
 
 const CANVAS: Color = Color::Rgb(12, 14, 12);
 const SURFACE: Color = Color::Rgb(10, 10, 10);
+const MODAL_SURFACE: Color = Color::Rgb(7, 8, 7);
+const MODAL_BACKDROP: Color = Color::Rgb(3, 4, 3);
 const SURFACE_2: Color = Color::Rgb(18, 18, 18);
 const BORDER: Color = Color::Rgb(42, 42, 42);
 const BORDER_FOCUS: Color = Color::Rgb(72, 72, 72);
@@ -973,7 +975,7 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         form.totp.to_string(),
     ];
     let blink = cursor_on(app);
-    let panel = Style::default().bg(SURFACE);
+    let panel = Style::default().bg(MODAL_SURFACE);
 
     let area = centered(frame.area(), 70, 26);
     let title = if is_edit { "Edit login" } else { "New login" };
@@ -981,12 +983,12 @@ fn draw_form(frame: &mut ratatui::Frame, app: &mut App) {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(BORDER_FOCUS).bg(SURFACE))
+            .border_style(Style::default().fg(BORDER_FOCUS).bg(MODAL_SURFACE))
             .title(Line::from(Span::styled(
                 format!(" {title} "),
                 Style::default()
                     .fg(INK)
-                    .bg(SURFACE)
+                    .bg(MODAL_SURFACE)
                     .add_modifier(Modifier::BOLD),
             )))
             .style(panel),
@@ -1095,7 +1097,7 @@ fn draw_help(frame: &mut ratatui::Frame, app: &App) {
                 " Keys & how to use Silo ",
                 Style::default().fg(INK).add_modifier(Modifier::BOLD),
             )))
-            .style(Style::default().bg(SURFACE)),
+            .style(Style::default().bg(MODAL_SURFACE)),
         area,
     );
 
@@ -1106,12 +1108,16 @@ fn draw_help(frame: &mut ratatui::Frame, app: &App) {
     let scroll = app.help_scroll.min(max_scroll);
     let page: Vec<Line> = lines.into_iter().skip(scroll).take(visible).collect();
 
-    frame.render_widget(Paragraph::new(page), inner);
+    frame.render_widget(
+        Paragraph::new(page).style(Style::default().fg(INK).bg(MODAL_SURFACE)),
+        inner,
+    );
     frame.render_widget(
         Paragraph::new(Line::from(hint_spans(&[
             ("↑↓", "scroll"),
             ("esc", "close"),
         ])))
+        .style(Style::default().fg(MUTED).bg(MODAL_SURFACE))
         .alignment(Alignment::Right),
         Rect {
             x: area.x + 2,
@@ -1195,7 +1201,6 @@ fn help_lines() -> Vec<Line<'static>> {
 }
 
 fn dim_area(frame: &mut ratatui::Frame, area: Rect) {
-    // Keep the green canvas, but dim foreground so the modal panel can sit on top.
     let buf = frame.buffer_mut();
     for y in area.top()..area.bottom() {
         for x in area.left()..area.right() {
@@ -1203,7 +1208,7 @@ fn dim_area(frame: &mut ratatui::Frame, area: Rect) {
                 cell.set_style(
                     Style::default()
                         .fg(FAINT)
-                        .bg(CANVAS)
+                        .bg(MODAL_BACKDROP)
                         .add_modifier(Modifier::DIM),
                 );
             }
@@ -1213,7 +1218,7 @@ fn dim_area(frame: &mut ratatui::Frame, area: Rect) {
 
 fn draw_delete_modal(frame: &mut ratatui::Frame, app: &App) {
     let area = centered(frame.area(), 52, 11);
-    let panel = Style::default().bg(SURFACE);
+    let panel = Style::default().bg(MODAL_SURFACE);
     frame.render_widget(
         Block::default()
             .borders(Borders::ALL)
