@@ -267,10 +267,10 @@ fn handle_request(request: Request, session: &Arc<Mutex<Session>>) -> Response {
                     error: None,
                 };
             }
-            match load_vault(&session.vault_path, &password) {
+            match load_vault(&session.vault_path, password.as_str()) {
                 Ok(vault) => {
                     session.vault = Some(vault);
-                    session.master = Some(Zeroizing::new(password));
+                    session.master = Some(Zeroizing::new(password.as_str().to_owned()));
                     session.last_activity = Instant::now();
                     Response {
                         ok: true,
@@ -562,7 +562,7 @@ mod tests {
 
         let wrong = handle_request(
             Request::Unlock {
-                password: "wrong password".into(),
+                password: silo_protocol::SensitiveString::new("wrong password"),
             },
             &session,
         );
@@ -570,7 +570,7 @@ mod tests {
 
         let unlocked = handle_request(
             Request::Unlock {
-                password: "correct password".into(),
+                password: silo_protocol::SensitiveString::new("correct password"),
             },
             &session,
         );

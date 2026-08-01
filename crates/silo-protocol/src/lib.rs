@@ -11,6 +11,26 @@ pub const MAX_FRAME_SIZE: usize = 1_000_000;
 pub const DEFAULT_SESSION_TIMEOUT_SECS: u64 = 900;
 pub const REQUEST_TTL_SECS: u64 = 10;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SensitiveString(String);
+
+impl SensitiveString {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for SensitiveString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrokerState {
     pub address: String,
@@ -54,7 +74,7 @@ pub enum Request {
     #[serde(rename = "lock")]
     Lock,
     #[serde(rename = "unlock")]
-    Unlock { password: String },
+    Unlock { password: SensitiveString },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

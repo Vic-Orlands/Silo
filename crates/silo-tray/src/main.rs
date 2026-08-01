@@ -183,7 +183,9 @@ return text returned of resultRecord
     if password.is_empty() {
         return Ok(());
     }
-    let response = broker_request(Request::Unlock { password })?;
+    let response = broker_request(Request::Unlock {
+        password: silo_protocol::SensitiveString::new(password),
+    })?;
     if response.ok {
         Ok(())
     } else {

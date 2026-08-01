@@ -17,6 +17,9 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
+mod migration;
+pub use migration::{import_migration, ImportFormat, ImportIssue, MigrationPreview};
+
 const MAGIC: &[u8; 8] = b"SILO\0\0\0\0";
 const LEGACY_MAGIC: &[u8; 8] = b"UZOPASS\0";
 const FORMAT_VERSION: u8 = 2;
@@ -50,6 +53,8 @@ pub enum Error {
     UnsupportedTotpMigration,
     #[error("TOTP secret is valid, but its configuration is unsupported: {0}")]
     UnsupportedTotpConfiguration(String),
+    #[error("migration import failed: {0}")]
+    Migration(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

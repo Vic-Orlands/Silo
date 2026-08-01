@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 mod tui;
 use rand::Rng;
 use silo_core::{
-    export_json, generate_totp, import_json, inspect_totp, load_vault, new_entry, save_vault,
-    Entry, SecretString, Vault,
+    export_json, generate_totp, import_migration, inspect_totp, load_vault, new_entry, save_vault,
+    Entry, ImportFormat, MigrationPreview, SecretString, Vault,
 };
 use std::{
     fs,
@@ -117,6 +117,12 @@ enum Command {
         input: PathBuf,
         #[arg(long)]
         replace: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        expect_count: Option<usize>,
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<String>,
     },
 }
 
@@ -204,7 +210,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::Remove { query, yes } => remove(&cli.vault, query, yes)?,
         Command::Generate { length } => println!("{}", generate_password(length)?),
         Command::Export { output } => export_vault(&cli.vault, &output)?,
-        Command::Import { input, replace } => import_vault(&cli.vault, &input, replace)?,
+        Command::Import {
+            input,
+            replace,
+            dry_run,
+            expect_count,
+            format,
+        } => import_vault(&cli.vault, &input, replace, dry_run, expect_count, format)?,
     }
     Ok(())
 }
@@ -380,7 +392,8 @@ fn edit(
         entry.email = email;
     }
     if change_password {
-        entry.password = SecretString::new(prompt_password("New entry password: ")?.to_string());
+        let password = prompt_password("New entry password: ")?;
+        entry.password = SecretString::new(password.as_str());
     }
     save_vault(path, &vault, &master)?;
     println!("Entry updated.");
@@ -421,13 +434,49 @@ fn import_vault(
     path: &Path,
     input: &Path,
     replace: bool,
+    dry_run: bool,
+    expect_count: Option<usize>,
+    format: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let imported = import_json(&fs::read(input)?)?;
+    let bytes = fs::read(input)?;
+    let requested = match format.as_deref() {
+        None => ImportFormat::Auto,
+        Some(value) => ImportFormat::parse(value).ok_or(
+            "unsupported import format; use auto, silo-json, bitwarden-json, 1password-csv, keepass-csv, browser-csv, or csv",
+        )?,
+    };
     let (mut vault, master) = unlock(path)?;
+    let comparison_vault = if replace { Vault::new() } else { vault.clone() };
+    let preview = import_migration(&bytes, requested, &comparison_vault)?;
+    print_migration_report(input, &preview);
+    if let Some(expected) = expect_count {
+        if expected != preview.entries.len() {
+            return Err(format!(
+                "expected {expected} valid entries, found {}",
+                preview.entries.len()
+            )
+            .into());
+        }
+    }
+    if dry_run {
+        println!("Dry run only; the vault was not changed.");
+        return Ok(());
+    }
+    let duplicates = preview
+        .duplicate_indices
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let imported = preview
+        .entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| (!duplicates.contains(&index)).then_some(entry))
+        .collect::<Vec<_>>();
     if replace {
-        vault = imported;
+        vault = Vault { entries: imported };
     } else {
-        for entry in imported.entries {
+        for entry in imported {
             vault.add(entry);
         }
     }
@@ -436,14 +485,25 @@ fn import_vault(
     Ok(())
 }
 
+fn print_migration_report(path: &Path, preview: &MigrationPreview) {
+    println!("Import:          {}", path.display());
+    println!("Detected format: {}", preview.format.label());
+    println!("Valid entries:   {}", preview.entries.len());
+    println!("Duplicates:      {}", preview.duplicate_indices.len());
+    println!("Failed rows:     {}", preview.issues.len());
+    for issue in &preview.issues {
+        println!("  Row {}: {}", issue.row, issue.message);
+    }
+}
+
 fn run_shell(path: &Path, timeout: u64) -> Result<(), Box<dyn std::error::Error>> {
     tui::run(path, timeout)
 }
 
 fn unlock_broker() -> Result<(), Box<dyn std::error::Error>> {
-    let password = Zeroizing::new(prompt_password("Silo password: ")?.to_string());
+    let password = prompt_password("Silo password: ")?;
     let response = broker_request(silo_protocol::Request::Unlock {
-        password: password.to_string(),
+        password: silo_protocol::SensitiveString::new(password.as_str()),
     })?;
     if !response.ok {
         return Err(response

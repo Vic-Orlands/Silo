@@ -54,7 +54,7 @@ silo lock                         Lock the background broker
 silo status                       Show broker state
 silo copy <name> password          Copy a secret and clear it later
 silo export <file>                Export plaintext JSON deliberately
-silo import <file>                Import plaintext JSON into the vault
+silo import <file>                Import Silo, Bitwarden, 1Password, KeePass, or browser exports
 ```
 
 `add` accepts `--url`, `--username`, `--email`, `--password`, `--password-file`, and `--totp-secret`. Silo only prompts for values you omit. Prefer `--password-file` for scripts because `--password` can be exposed in shell history or process listings.
@@ -131,9 +131,35 @@ cargo run -p silo -- --vault old-silo.vault list
 
 The previous `UZOPASS` file header is still accepted for compatibility. Newly saved vaults use the `SILO` header with recorded Argon2id parameters. Your existing `uzopass.vault` file is not moved or deleted; pass it explicitly with `--vault uzopass.vault` while transitioning.
 
+## Password migration
+
+`import` detects Silo JSON, unencrypted Bitwarden JSON, 1Password CSV, KeePass/KeePassXC CSV, browser CSV, and common generic CSV exports. It regenerates every imported entry ID instead of trusting IDs from another password manager, validates required fields and URLs, preserves supported TOTP secrets/`otpauth://` URIs, reports malformed rows, and detects exact duplicates by host, username, and password.
+
+Preview an import without changing the vault:
+
+```bash
+cargo run -p silo -- --vault /tmp/silo-test/test.vault import bitwarden.json --dry-run
+```
+
+Apply it after reviewing the report:
+
+```bash
+cargo run -p silo -- --vault /tmp/silo-test/test.vault import bitwarden.json --expect-count 42
+```
+
+Use `--format bitwarden-json`, `--format 1password-csv`, `--format keepass-csv`, `--format browser-csv`, or `--format csv` when automatic detection needs help. Exact duplicates are skipped; different accounts on the same host are retained. `--replace` replaces the current vault entries with the valid imported set, so create and verify a backup first.
+
+Exports from Bitwarden must be unencrypted JSON or CSV. Silo cannot decrypt another manager's encrypted export. Treat every plaintext export as sensitive: create it locally, set restrictive file permissions, import it, verify the result, then securely delete it and empty the system trash. Do not upload exports to a website or commit them to Git.
+
 ## Why TOTP failed before
 
-`otp github` does not create a TOTP secret. It calculates a code from a secret already stored on the GitHub entry. The old CLI made it easy to create an entry without that secret. The new flow makes the setup visible:
+`otp github` does not create a TOTP secret. It calculates a code from a secret already stored on the GitHub entry. A website creates that secret when you enroll 2FA; Silo cannot invent a replacement secret and remain synchronized with an existing account. The migration importer automatically carries supported TOTP secrets from Bitwarden, 1Password, KeePass, and compatible CSV exports:
+
+```bash
+cargo run -p silo -- --vault /tmp/silo-test/test.vault import bitwarden.json --dry-run
+```
+
+For one manual account, paste either the setup secret or the complete `otpauth://` URI. You do not need to convert it into a six-digit code or generate a new 32-character value:
 
 ```bash
 cargo run -p silo -- set-totp github
@@ -144,6 +170,8 @@ Paste the secret shown by the website. Then:
 ```bash
 cargo run -p silo -- otp github
 ```
+
+Authy accounts work when you can export or retrieve the account's original TOTP secret/`otpauth://` URI. Authy itself does not provide Silo with a magic local database conversion path; if the secret cannot be exported, re-enroll that website's 2FA and save the new setup URI in Silo. The six-digit codes are time-based outputs, not the secret that should be migrated.
 
 The TOTP implementation currently supports the common six-digit, 30-second HMAC-SHA1 format. It accepts either a raw Base32 setup secret or a standard `otpauth://` URI copied from a QR-code tool. The value must be the setup secret, not the six-digit code currently displayed by an authenticator app.
 
