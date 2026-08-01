@@ -27,10 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = Args::parse();
     let mut input = io::stdin();
     let mut output = io::stdout();
-    loop {
-        let Some(message) = read_frame(&mut input)? else {
-            break;
-        };
+    while let Some(message) = read_frame(&mut input)? {
         let response = match serde_json::from_slice::<Request>(&message) {
             Ok(Request::OpenSilo) => open_silo(),
             Ok(request) => request_broker(&request),
