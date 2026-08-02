@@ -8,7 +8,7 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha1::Sha1;
 use std::{
-    fs,
+    fmt, fs,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -17,6 +17,7 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
+mod memory;
 mod migration;
 pub use migration::{import_migration, ImportFormat, ImportIssue, MigrationPreview};
 
@@ -66,8 +67,17 @@ pub struct TotpMetadata {
     pub secret_bytes: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct SecretString(pub String);
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+pub struct SecretString(String);
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SecretString")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl SecretString {
     pub fn new(value: impl Into<String>) -> Self {
@@ -190,6 +200,7 @@ impl Vault {
 
 pub fn save_vault(path: impl AsRef<Path>, vault: &Vault, password: &str) -> Result<(), Error> {
     let plaintext = Zeroizing::new(serde_json::to_vec(vault)?);
+    let _plaintext_lock = memory::Locked::new(&plaintext);
     let mut salt = [0u8; SALT_LENGTH];
     let mut nonce = [0u8; NONCE_LENGTH];
     OsRng.fill_bytes(&mut salt);
@@ -276,6 +287,7 @@ pub fn load_vault(path: impl AsRef<Path>, password: &str) -> Result<Vault, Error
             .decrypt(XNonce::from_slice(nonce), ciphertext)
             .map_err(|_| Error::InvalidPasswordOrVault)?,
     );
+    let _plaintext_lock = memory::Locked::new(&plaintext);
 
     Ok(serde_json::from_slice(&plaintext)?)
 }
@@ -523,10 +535,12 @@ fn derive_key(
     iterations: u32,
     parallelism: u32,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
+    let _password_lock = memory::Locked::new(password);
     let params = Params::new(memory_kib, iterations, parallelism, Some(32))
         .map_err(|_| Error::InvalidPasswordOrVault)?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
+    let _key_lock = memory::Locked::new(&key[..]);
     argon2
         .hash_password_into(password, salt, key.as_mut())
         .map_err(|_| Error::InvalidPasswordOrVault)?;
@@ -574,6 +588,14 @@ fn set_private_permissions(path: &Path) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_debug_output_is_redacted() {
+        let secret = SecretString::new("do-not-print");
+        let output = format!("{secret:?}");
+        assert!(!output.contains("do-not-print"));
+        assert!(output.contains("REDACTED"));
+    }
 
     #[test]
     fn vault_round_trip_works() {

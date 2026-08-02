@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::{
     fs,
     io::{self, Read, Write},
@@ -11,9 +12,18 @@ pub const MAX_FRAME_SIZE: usize = 1_000_000;
 pub const DEFAULT_SESSION_TIMEOUT_SECS: u64 = 900;
 pub const REQUEST_TTL_SECS: u64 = 10;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SensitiveString(String);
+
+impl fmt::Debug for SensitiveString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SensitiveString")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl SensitiveString {
     pub fn new(value: impl Into<String>) -> Self {
@@ -31,7 +41,7 @@ impl Drop for SensitiveString {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BrokerState {
     pub address: String,
     pub token: String,
@@ -39,7 +49,7 @@ pub struct BrokerState {
     pub vault_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Envelope {
     pub version: u8,
     pub request_id: String,
@@ -48,7 +58,7 @@ pub struct Envelope {
     pub request: Request,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Request {
     #[serde(rename = "status")]
@@ -77,7 +87,7 @@ pub enum Request {
     Unlock { password: SensitiveString },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Response {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -197,5 +207,13 @@ mod tests {
         let encoded = (MAX_FRAME_SIZE as u32 + 1).to_le_bytes().to_vec();
         assert!(read_frame(&mut encoded.as_slice()).is_err());
         assert!(write_frame(&mut Vec::new(), &vec![0; MAX_FRAME_SIZE + 1]).is_err());
+    }
+
+    #[test]
+    fn sensitive_debug_output_is_redacted() {
+        let secret = SensitiveString::new("do-not-print");
+        let output = format!("{secret:?}");
+        assert!(!output.contains("do-not-print"));
+        assert!(output.contains("REDACTED"));
     }
 }

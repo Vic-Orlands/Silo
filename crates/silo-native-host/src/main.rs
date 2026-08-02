@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(message) = read_frame(&mut input)? {
         let response = match serde_json::from_slice::<Request>(&message) {
             Ok(Request::OpenSilo) => open_silo(),
-            Ok(request) => request_broker(&request),
+            Ok(request) => request_broker(request),
             Err(_) => error_response("invalid request"),
         };
         write_frame(&mut output, &serde_json::to_vec(&response)?)?;
@@ -93,7 +93,7 @@ return text returned of resultRecord
     if password.is_empty() {
         return error_response("Silo password cannot be empty");
     }
-    request_broker(&Request::Unlock {
+    request_broker(Request::Unlock {
         password: silo_protocol::SensitiveString::new(password),
     })
 }
@@ -161,7 +161,7 @@ fn silo_binary() -> PathBuf {
     PathBuf::from("silo")
 }
 
-fn request_broker(request: &Request) -> Response {
+fn request_broker(request: Request) -> Response {
     let state_path = broker_state_path();
     let state = match silo_protocol::read_state(&state_path) {
         Ok(state) => state,
@@ -178,7 +178,7 @@ fn request_broker(request: &Request) -> Response {
         request_id: Uuid::new_v4().to_string(),
         expires_at: now().saturating_add(REQUEST_TTL_SECS),
         token: state.token,
-        request: request.clone(),
+        request,
     }) {
         Ok(envelope) => envelope,
         Err(_) => return error_response("could not encode broker request"),
