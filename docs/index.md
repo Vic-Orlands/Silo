@@ -54,3 +54,10 @@ Silo is not yet a replacement for an independently audited production password m
 ## Project status
 
 Silo is under active development. The source, tests, migration notes, packaging scripts, and issue tracker are available on [GitHub](https://github.com/Vic-Orlands/Silo).
+
+## Engineering notes
+
+- [What Silo does with your master password]({{ "/secret-lifecycle-hardening/" | relative_url }})
+- [Building Silo Tray]({{ "/building-silo-tray/" | relative_url }})
+- [Migrating passwords and TOTP accounts into Silo]({{ "/importing-passwords-into-silo/" | relative_url }})
+- [Silo architecture explained]({{ "/silo-architecture/" | relative_url }})

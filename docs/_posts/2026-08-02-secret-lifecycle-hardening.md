@@ -2,6 +2,7 @@
 layout: post
 title: "What Silo does with your master password"
 date: 2026-08-02
+permalink: /secret-lifecycle-hardening/
 ---
 
 When we started Silo, the central question was simple: can a local password manager keep secrets useful without keeping them around longer than necessary?
@@ -28,6 +29,25 @@ We made the secret lifecycle narrower and more explicit.
 
 Sensitive types no longer print their contents through `Debug`. This matters because debug output often reaches test failures, logs, crash reports, or developer tooling.
 
+The implementation deliberately gives the wrapper a safe diagnostic representation:
+
+```rust
+impl fmt::Debug for SecretString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SecretString")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
+```
+
+The secret is still available through a narrow borrow when cryptographic code needs it:
+
+```rust
+let key = derive_key(password.as_bytes(), &salt, 64 * 1024, 3, 1)?;
+```
+
 ### Fewer protocol copies
 
 The native host now moves a request into its broker envelope instead of cloning the request first. This is particularly useful for unlock and save-login messages.
@@ -46,6 +66,16 @@ Silo now attempts `mlock` on Unix and `VirtualLock` on Windows for short-lived s
 
 The important design decision is to treat failure honestly. If page locking is unavailable, Silo continues with zeroization and normal operating-system protections; it does not claim that the memory is locked.
 
+The guard owns no secret data. It only remembers the address and length, locks the pages during the scope, and unlocks them when the scope ends:
+
+```rust
+let _password_lock = memory::Locked::new(password.as_bytes());
+let mut key = Zeroizing::new([0u8; 32]);
+let _key_lock = memory::Locked::new(&key[..]);
+
+argon2.hash_password_into(password, salt, key.as_mut())?;
+```
+
 ## What happens during save and load?
 
 On save:
@@ -61,6 +91,15 @@ XChaCha20-Poly1305 encrypts vault
 ```
 
 On load, the same derivation happens again with the stored salt. The resulting key attempts authenticated decryption. There is no stored master-password hash being compared. A wrong password derives the wrong key, and the authentication tag rejects it.
+
+The save path is similarly explicit:
+
+```rust
+let plaintext = Zeroizing::new(serde_json::to_vec(vault)?);
+let key = derive_key(password.as_bytes(), &salt, 64 * 1024, 3, 1)?;
+let cipher = XChaCha20Poly1305::new((&*key).into());
+let ciphertext = cipher.encrypt(XNonce::from_slice(&nonce), plaintext.as_ref())?;
+```
 
 The password is therefore present in memory during both derivation paths. Zeroization happens after the value is no longer needed. It cannot protect a process that a privileged attacker is actively inspecting while it is unlocked.
 
