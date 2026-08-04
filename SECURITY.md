@@ -1,6 +1,6 @@
 # Silo security model
 
-Silo is an educational local-first password manager. It is not a replacement for an independently audited password manager.
+Silo is a local-first password manager. It is not a replacement for an independently audited password manager.
 
 ## Trust boundaries
 
