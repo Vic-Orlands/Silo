@@ -10,23 +10,43 @@
   --mint: #b9f3cb;
   --mint-ink: #0b1b11;
   --line: rgba(210, 235, 216, .15);
+  --content-width: 720px;
+}
+
+html {
+  background: var(--canvas);
 }
 
 body {
-  background: var(--canvas);
+  background:
+    radial-gradient(circle at 50% -12rem, rgba(93, 173, 118, .09), transparent 34rem),
+    var(--canvas);
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 15px;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
 .container-lg {
-  max-width: 920px;
+  box-sizing: border-box;
+  margin-inline: auto !important;
+  max-width: var(--content-width);
+  padding-inline: 1.5rem !important;
+  width: 100%;
+}
+
+.markdown-body {
+  background: transparent;
+  color: var(--muted);
+  font-size: .94rem;
 }
 
 .eyebrow {
   color: var(--mint);
-  font-size: .72rem;
+  font-size: .66rem;
   letter-spacing: .16em;
+  margin-bottom: 1rem;
 }
 
 h1, h2, h3 {
@@ -36,26 +56,47 @@ h1, h2, h3 {
 }
 
 h1 {
-  font-size: clamp(3rem, 9vw, 6.5rem);
-  line-height: .95;
-  margin-bottom: 1.5rem;
+  font-size: clamp(2.25rem, 7vw, 4rem);
+  line-height: 1;
+  margin-bottom: 1.25rem;
+  max-width: 15ch;
 }
 
 h2 {
   border-bottom: 1px solid var(--line);
-  font-size: 1.25rem;
-  margin-top: 3.5rem;
-  padding-bottom: .7rem;
+  font-size: 1.1rem;
+  margin-top: 3rem;
+  padding-bottom: .6rem;
+}
+
+h3 {
+  font-size: .95rem;
+  margin-top: 2rem;
 }
 
 p, li {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 1rem;
-  line-height: 1.75;
+  font-size: .94rem;
+  line-height: 1.7;
+}
+
+strong {
+  color: var(--ink);
 }
 
 a {
   color: var(--mint);
+  text-underline-offset: .18em;
+}
+
+a:hover {
+  color: var(--ink);
+}
+
+a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
 }
 
 .hero-actions {
@@ -71,13 +112,20 @@ a {
   border-radius: 5px;
   color: var(--mint-ink);
   display: inline-block;
+  font-size: .82rem;
   font-weight: 700;
-  padding: .7rem 1rem;
+  padding: .65rem .9rem;
   text-decoration: none;
+}
+
+.button:hover {
+  background: var(--ink);
+  color: var(--mint-ink);
 }
 
 .quiet-link {
   color: var(--muted);
+  font-size: .84rem;
   font-style: italic;
 }
 
@@ -86,15 +134,69 @@ pre {
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--ink);
+  font-size: .8rem;
+  line-height: 1.6;
   overflow-x: auto;
-  padding: 1rem;
+  padding: .9rem 1rem;
 }
 
 code {
   background: var(--surface);
   color: var(--mint);
+  font-size: .86em;
 }
 
 pre code {
   background: transparent;
+  font-size: inherit;
+}
+
+.markdown-body blockquote {
+  border-left-color: var(--mint);
+  color: var(--muted);
+}
+
+.markdown-body hr {
+  background-color: var(--line);
+}
+
+.markdown-body table {
+  display: table;
+  font-size: .82rem;
+  width: 100%;
+}
+
+.markdown-body table tr {
+  background: transparent;
+  border-top-color: var(--line);
+}
+
+.markdown-body table tr:nth-child(2n) {
+  background: var(--surface);
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  border-color: var(--line);
+  padding: .55rem .7rem;
+}
+
+@media (max-width: 600px) {
+  .container-lg {
+    padding-inline: 1.1rem !important;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 12vw, 3rem);
+  }
+
+  .hero-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 2.5rem;
+  }
+
+  .markdown-body table {
+    display: block;
+  }
 }
