@@ -33,20 +33,27 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create a new encrypted vault
     Init,
+    /// Open the interactive terminal workspace
     Shell {
         #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
         timeout: u64,
     },
+    /// Run the local browser session broker
     Broker {
         #[arg(long, default_value_t = silo_protocol::DEFAULT_SESSION_TIMEOUT_SECS)]
         timeout: u64,
         #[arg(long)]
         background: bool,
     },
+    /// Unlock a running background broker
     Unlock,
+    /// Lock a running background broker
     Lock,
+    /// Show the background broker state
     Status,
+    /// Add a login to the vault
     Add {
         name: String,
         #[arg(long)]
@@ -62,15 +69,17 @@ enum Command {
         #[arg(long = "totp-secret")]
         totp_secret: Option<String>,
     },
+    /// List the logins in the vault
     List,
-    Show {
-        query: String,
-    },
+    /// Show login metadata without revealing its password
+    Show { query: String },
+    /// Print a field from a login
     Get {
         query: String,
         #[arg(value_enum, default_value_t = Field::Password)]
         field: Field,
     },
+    /// Copy a login field and clear it from the clipboard later
     Copy {
         query: String,
         #[arg(value_enum, default_value_t = Field::Password)]
@@ -78,16 +87,16 @@ enum Command {
         #[arg(short, long, default_value_t = 20)]
         seconds: u64,
     },
-    Otp {
-        query: String,
-    },
-    OtpCheck {
-        query: String,
-    },
+    /// Generate the current TOTP code for a login
+    Otp { query: String },
+    /// Diagnose the TOTP configuration for a login
+    OtpCheck { query: String },
+    /// Add, replace, or clear a login's TOTP secret
     SetTotp {
         query: String,
         secret: Option<String>,
     },
+    /// Edit an existing login
     Edit {
         query: String,
         #[arg(long)]
@@ -101,18 +110,20 @@ enum Command {
         #[arg(long)]
         password: bool,
     },
+    /// Remove a login from the vault
     Remove {
         query: String,
         #[arg(short, long)]
         yes: bool,
     },
+    /// Generate a password without saving it
     Generate {
         #[arg(short, long, default_value_t = 24)]
         length: usize,
     },
-    Export {
-        output: PathBuf,
-    },
+    /// Export the vault to a plaintext JSON file
+    Export { output: PathBuf },
+    /// Import logins from a supported export file
     Import {
         input: PathBuf,
         #[arg(long)]

@@ -11,7 +11,7 @@ description: A local-first password manager for the terminal, desktop, and brows
 Your passwords stay in an encrypted vault on your computer. Silo brings the same vault to the terminal, a background desktop session, and an explicit browser bridge.
 
 <div class="hero-actions">
-  <a class="button" href="https://github.com/Vic-Orlands/Silo">View on GitHub</a>
+  <a class="button" href="https://github.com/Vic-Orlands/Silo/releases/latest">Download Silo</a>
   <a class="quiet-link" href="https://github.com/Vic-Orlands/Silo#start-here">Read the setup guide</a>
 </div>
 
@@ -25,9 +25,11 @@ Your passwords stay in an encrypted vault on your computer. Silo brings the same
 
 ## Start locally
 
+Install the archive for your system from the [latest GitHub release](https://github.com/Vic-Orlands/Silo/releases/latest), then run:
+
 ```bash
-cargo run -p silo -- init
-cargo run -p silo -- shell
+silo --vault "$HOME/silo.vault" init
+silo --vault "$HOME/silo.vault" shell
 ```
 
 For browser access, install the background broker and native host using the instructions in the repository README.
@@ -37,8 +39,7 @@ For browser access, install the background broker and native host using the inst
 Preview an import before changing the vault:
 
 ```bash
-cargo run -p silo -- \
-  --vault /path/to/silo.vault \
+silo --vault /path/to/silo.vault \
   import export.json \
   --dry-run
 ```
