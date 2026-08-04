@@ -8,8 +8,18 @@ fn help_describes_the_primary_commands() {
         .unwrap();
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    for command in ["init", "shell", "broker", "otp-check", "import", "export"] {
-        assert!(help.contains(command), "missing {command} in help output");
+    for description in [
+        "Create a new encrypted vault",
+        "Open the interactive terminal workspace",
+        "Run the local browser session broker",
+        "Diagnose the TOTP configuration for a login",
+        "Import logins from a supported export file",
+        "Export the vault to a plaintext JSON file",
+    ] {
+        assert!(
+            help.contains(description),
+            "missing {description} in help output"
+        );
     }
 }
 
