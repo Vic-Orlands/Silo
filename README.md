@@ -1,311 +1,107 @@
 # Silo
 
-Silo is a local-first password manager from scratch. The command-line interface and local browser bridge are the primary product surfaces. You can also use the Shell for better UX interactivity.
+Silo is a local-first password manager built in Rust. It keeps the vault on your machine and makes every release of a secret an explicit action.
 
-https://github.com/user-attachments/assets/c8749aa5-8d67-48ef-972e-2d66a75aac59
+[Download the latest release](https://github.com/Vic-Orlands/Silo/releases/latest) · [Architecture](https://github.com/Vic-Orlands/Silo/blob/main/docs/_posts/2026-08-05-silo-architecture.md) · [Security hardening](https://github.com/Vic-Orlands/Silo/blob/main/docs/security-hardening.md)
 
-## Install Silo
+![Silo terminal workspace](https://github.com/user-attachments/assets/c8749aa5-8d67-48ef-972e-2d66a75aac59)
 
-Download the archive for your system from the [latest GitHub release](https://github.com/Vic-Orlands/Silo/releases/latest):
+## Why Silo exists
 
-- `aarch64-apple-darwin` for Apple silicon Macs.
-- `x86_64-unknown-linux-gnu` for 64-bit Linux.
-- `x86_64-pc-windows-msvc` for 64-bit Windows.
+Many password managers begin with an account and synchronization service. Silo begins with a local encrypted file. The CLI, terminal workspace, desktop tray, and browser bridge all operate around that vault without requiring a cloud account or sync layer.
 
-### macOS and Linux
+The project is also an exploration of explicit secret access: metadata can be inspected without displaying a password, copy operations clear themselves, the browser receives only approved fields, and background sessions return to a locked state after inactivity.
 
-Set `TARGET` for your system, then download and install the four executables:
+## Product surfaces
 
-```bash
-VERSION=v0.1.0
-TARGET=aarch64-apple-darwin
+- Focused CLI commands for creating, reading, updating, importing, and exporting entries
+- Full-screen terminal workspace with search, keyboard navigation, and short-lived copy actions
+- Background broker that owns an unlocked session and enforces inactivity timeouts
+- Cross-platform tray companion for locking, unlocking, and opening the vault
+- Browser extension and native-messaging bridge with explicit approval flows
+- TOTP storage, generation, migration, and diagnostics
+- Import support for Silo, Bitwarden, 1Password, KeePass, and common browser exports
+- Signed release artifacts for macOS, Linux, and Windows
 
-curl -LO "https://github.com/Vic-Orlands/Silo/releases/download/$VERSION/silo-$VERSION-$TARGET.tar.gz"
-mkdir "silo-$VERSION"
-tar -xzf "silo-$VERSION-$TARGET.tar.gz" -C "silo-$VERSION"
+## Architecture
 
-mkdir -p "$HOME/.local/bin"
-install -m 755 "silo-$VERSION/silo" "$HOME/.local/bin/silo"
-install -m 755 "silo-$VERSION/silo-broker" "$HOME/.local/bin/silo-broker"
-install -m 755 "silo-$VERSION/silo-native-host" "$HOME/.local/bin/silo-native-host"
-install -m 755 "silo-$VERSION/silo-tray" "$HOME/.local/bin/silo-tray"
+```mermaid
+flowchart LR
+    V["Encrypted local vault"] --> C["silo-core"]
+    C --> CLI["CLI and terminal shell"]
+    C --> B["Background broker"]
+    B --> T["Desktop tray"]
+    B --> N["Native host"]
+    N --> E["Browser extension"]
 ```
 
-Ensure `$HOME/.local/bin` is on your `PATH`. Add this to `~/.zshrc` on macOS or your shell's equivalent file on Linux, then open a new terminal:
+| Crate | Responsibility |
+| --- | --- |
+| `silo-core` | Vault model, file format, encryption, URL matching, and TOTP |
+| `silo-cli` | Commands, prompts, terminal workspace, and user-facing behaviour |
+| `silo-broker` | Unlocked local session, timeout, lock state, and browser-request policy |
+| `silo-protocol` | Versioned messages shared by the broker and native host |
+| `silo-native-host` | Native-messaging bridge between the browser and broker |
+| `silo-tray` | Cross-platform tray process that owns the broker lifecycle |
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+## Security model
 
-### Windows
+- Argon2id derives the vault key from the master password.
+- ChaCha20-Poly1305 provides authenticated encryption for the vault payload.
+- Sensitive values use explicit zeroization where the implementation permits it.
+- Saves are atomic and preserve the previous vault as a backup.
+- The broker clears decrypted state and the master password when it locks or exits.
+- The browser extension never receives the master password.
+- Clipboard contents are cleared after a short timeout only when another application has not replaced them.
+- Release workflows publish SHA-256 checksums and Cosign signatures.
+- CI runs workspace tests, dependency auditing, packaging checks, browser smoke tests, and dedicated fuzz targets.
 
-Run these commands in PowerShell:
+Read [`docs/security-hardening.md`](./docs/security-hardening.md) for the security boundaries and remaining work.
 
-```powershell
-$Version = "v0.1.0"
-$Archive = "silo-$Version-x86_64-pc-windows-msvc.tar.gz"
-$InstallDir = "$env:LOCALAPPDATA\Silo\bin"
+## Install
 
-Invoke-WebRequest "https://github.com/Vic-Orlands/Silo/releases/download/$Version/$Archive" -OutFile $Archive
-New-Item -ItemType Directory -Force $InstallDir | Out-Null
-tar -xzf $Archive -C $InstallDir
+Download the archive for your platform from the [latest release](https://github.com/Vic-Orlands/Silo/releases/latest):
 
-$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($UserPath -split ";") -notcontains $InstallDir) {
-  [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
-}
-$env:Path = "$InstallDir;$env:Path"
-```
+- `aarch64-apple-darwin` for Apple silicon Macs
+- `x86_64-unknown-linux-gnu` for 64-bit Linux
+- `x86_64-pc-windows-msvc` for 64-bit Windows
 
-Verify the installation:
+Each release includes checksums and a Cosign signature. Verify downloaded artifacts with the repository’s [`cosign.pub`](./cosign.pub) key before installing them.
 
-```powershell
-silo --version
-silo --help
-```
-
-Each release also provides a SHA-256 checksum and Cosign signature. Verify them with the public [`cosign.pub`](cosign.pub) key before installing a downloaded archive.
-
-## Start here
-
-Create a local encrypted vault:
+## Start a vault
 
 ```bash
 silo --vault "$HOME/silo.vault" init
-```
-
-Add a login interactively:
-
-```bash
 silo --vault "$HOME/silo.vault" add github --url https://github.com --username you@example.com
-```
-
-The command asks for the login password and then asks whether you want to save a TOTP secret. You can also provide it directly:
-
-```bash
-silo --vault "$HOME/silo.vault" add github \
-  --url https://github.com \
-  --username you@example.com \
-  --totp-secret JBSWY3DPEHPK3PXP
-```
-
-## CLI design
-
-Every command unlocks the local vault, performs one focused operation, saves if necessary, and exits. This is intentionally simple while we learn the system. A later session mode can keep the vault unlocked for several commands.
-
-Run `silo --help` to see every command, or `silo <command> --help` for a command's options. Inside `silo shell`, press `?` to open the keyboard guide.
-
-```text
-silo init                         Create an encrypted vault
-silo add <name>                   Add a login; missing details are prompted for
-silo list                         List names, usernames, and URLs
-silo show <name>                  Show metadata without displaying the password
-silo get <name> username          Print a username
-silo get <name> password          Print a password explicitly
-silo get <name> url               Print a URL
-silo otp <name>                   Print the current six-digit TOTP code
-silo otp-check <name>             Validate TOTP setup and explain its configuration
-silo set-totp <name>              Add, replace, or clear a TOTP secret
-silo edit <name>                  Change metadata or use --password to change password
-silo remove <name>                Delete an entry after confirmation
-silo remove <name> --yes          Delete without confirmation
-silo generate                     Generate a password without saving it
-silo shell                        Unlock once and work interactively
-silo broker                       Run the local browser session broker
-silo broker --background          Run a locked broker without a terminal session
-silo unlock                       Unlock the background broker
-silo lock                         Lock the background broker
-silo status                       Show broker state
-silo copy <name> password          Copy a secret and clear it later
-silo export <file>                Export plaintext JSON deliberately
-silo import <file>                Import Silo, Bitwarden, 1Password, KeePass, or browser exports
-```
-
-`add` accepts `--url`, `--username`, `--email`, `--password`, `--password-file`, and `--totp-secret`. Silo only prompts for values you omit. Prefer `--password-file` for scripts because `--password` can be exposed in shell history or process listings.
-
-The shell is a full-screen terminal workspace with a quiet editorial language: near-black canvas, whitespace-led hierarchy, a single navigation rail, and emerald reserved for live/success state. Set your terminal to Monaspace Radon for the intended feel; Silo reserves italic styling for keyboard callouts. Unlock and create flows use short checkmark / progress ceremonies. Default inactivity timeout is 15 minutes:
-
-```bash
 silo --vault "$HOME/silo.vault" shell
-silo --vault "$HOME/silo.vault" shell --timeout 300
 ```
 
-For browser use without keeping a shell open, install the broker as a login service. It starts locked, keeps running in the background, and holds decrypted vault data only after you unlock it:
-
-```bash
-SILO_CLI_BIN="$(command -v silo)" \
-  sh scripts/install-broker.sh /tmp/silo-test/test.vault
-```
-
-The macOS LaunchAgent or Linux user service starts the broker automatically. On Windows, use `scripts/install-broker.ps1`. Unlock it when needed:
-
-```bash
-silo unlock
-silo status
-```
-
-The browser extension's **Unlock Silo** action opens a short-lived unlock session. It does not keep a management shell running. The shell remains available for full vault management and also starts an unlocked broker for that interactive session:
-
-```bash
-silo --vault /tmp/silo-test/test.vault shell --timeout 900
-```
-
-For the always-visible desktop companion, install the tray process instead of the broker-only service:
-
-```bash
-SILO_TRAY_BIN="$(command -v silo-tray)" \
-SILO_CLI_BIN="$(command -v silo)" \
-  sh scripts/install-tray.sh /tmp/silo-test/test.vault
-```
-
-Silo then appears in the macOS menu bar, Windows notification area, or Linux system tray. Its menu shows `Silo vault: {status}`, one context-aware lock/unlock action, **Open Silo vault**, and **Quit Silo vault**. The tray process owns the broker, so quitting it also removes the broker session. Use the tray service or the broker-only service, not both for the same vault.
-
-The broker owns the unlocked vault session, locks after the shared timeout, clears the decrypted vault and master password on lock, and removes its state when the owning process exits. The browser extension only receives explicitly approved login/TOTP results; the master password is not entered into or stored by the browser extension.
-
-Inside the shell:
-
-```text
-↑ / ↓ or j / k       Select an entry
-enter                 Open entry details
-→                     Open details and navigate overview fields
-← / esc               Leave field copy mode (or close details)
-/                     Search entries (also: click the search input)
-n                     Create a login
-e                     Edit the selected login
-d                     Delete after confirmation
-c                     Copy password; or copy the marked overview field
-o                     Generate and copy TOTP; clears after 20 seconds
-Ctrl-U                Clear the active input
-?                     Keys & how to use Silo (scrollable)
-Ctrl-S                Save the current form
-x                     Reveal or hide the password in a form
-q                     Quit and lock
-```
-
-Click an authentication to select it, or click a detail field to mark it for copy. Forms support mid-string editing with arrow keys / mouse click. Search text wraps and the input grows with content.
-
-Clipboard copy runs in the background so the workspace stays usable, then clears the clipboard after 20 seconds only if another application has not replaced the copied value. Export is deliberately explicit because the output is plaintext JSON and must be protected or deleted after use. Saves are atomic and retain the previous vault as a `.bak` file.
-
-Use another vault file with `--vault`:
-
-```bash
-silo --vault old-silo.vault list
-```
-
-The previous `UZOPASS` file header is still accepted for compatibility. Newly saved vaults use the `SILO` header with recorded Argon2id parameters. Your existing `uzopass.vault` file is not moved or deleted; pass it explicitly with `--vault uzopass.vault` while transitioning.
-
-## Password migration
-
-`import` detects Silo JSON, unencrypted Bitwarden JSON, 1Password CSV, KeePass/KeePassXC CSV, browser CSV, and common generic CSV exports. It regenerates every imported entry ID instead of trusting IDs from another password manager, validates required fields and URLs, preserves supported TOTP secrets/`otpauth://` URIs, reports malformed rows, and detects exact duplicates by host, username, and password.
-
-Preview an import without changing the vault:
-
-```bash
-silo --vault /tmp/silo-test/test.vault import bitwarden.json --dry-run
-```
-
-Apply it after reviewing the report:
-
-```bash
-silo --vault /tmp/silo-test/test.vault import bitwarden.json --expect-count 42
-```
-
-Use `--format bitwarden-json`, `--format 1password-csv`, `--format keepass-csv`, `--format browser-csv`, or `--format csv` when automatic detection needs help. Exact duplicates are skipped; different accounts on the same host are retained. `--replace` replaces the current vault entries with the valid imported set, so create and verify a backup first.
-
-Exports from Bitwarden must be unencrypted JSON or CSV. Silo cannot decrypt another manager's encrypted export. Treat every plaintext export as sensitive: create it locally, set restrictive file permissions, import it, verify the result, then securely delete it and empty the system trash. Do not upload exports to a website or commit them to Git.
-
-## Why TOTP failed before
-
-`otp github` does not create a TOTP secret. It calculates a code from a secret already stored on the GitHub entry. A website creates that secret when you enroll 2FA; Silo cannot invent a replacement secret and remain synchronized with an existing account. The migration importer automatically carries supported TOTP secrets from Bitwarden, 1Password, KeePass, and compatible CSV exports:
-
-```bash
-silo --vault /tmp/silo-test/test.vault import bitwarden.json --dry-run
-```
-
-For one manual account, paste either the setup secret or the complete `otpauth://` URI. You do not need to convert it into a six-digit code or generate a new 32-character value:
-
-```bash
-silo set-totp github
-```
-
-Paste the secret shown by the website. Then:
-
-```bash
-silo otp github
-```
-
-Authy accounts work when you can export or retrieve the account's original TOTP secret/`otpauth://` URI. Authy itself does not provide Silo with a magic local database conversion path; if the secret cannot be exported, re-enroll that website's 2FA and save the new setup URI in Silo. The six-digit codes are time-based outputs, not the secret that should be migrated.
-
-The TOTP implementation currently supports the common six-digit, 30-second HMAC-SHA1 format. It accepts either a raw Base32 setup secret or a standard `otpauth://` URI copied from a QR-code tool. The value must be the setup secret, not the six-digit code currently displayed by an authenticator app.
-
-When a code does not work, use the diagnostic command:
-
-```bash
-silo --vault silo.vault otp-check github
-```
-
-It reports the source format, algorithm, digit count, period, decoded byte length, current code, and time remaining without printing the secret.
-
-## Code map for learning
-
-- `crates/silo-core`: data structures, encryption, vault file format, URL matching, and TOTP.
-- `crates/silo-cli`: command parsing, prompts, and user-facing behavior.
-- `crates/silo-broker`: unlocked local session, timeout, lock, and browser request policy.
-- `crates/silo-protocol`: versioned JSON requests, responses, broker state, and native-messaging frames shared by the broker and host.
-- `crates/silo-native-host`: native messaging bridge process.
-- `crates/silo-tray`: cross-platform menu-bar/system-tray companion that owns the background broker.
-- `extension`: browser bridge with explicit popup actions for login and one-time-code filling.
-
-## Browser bridge installation
-
-Load the packaged `extension` directory as an unpacked browser extension, copy its extension ID, then install the native host:
-
-```bash
-SILO_NATIVE_HOST_BIN="$(command -v silo-native-host)" \
-SILO_CLI_BIN="$(command -v silo)" \
-SILO_VAULT="$HOME/silo.vault" \
-  sh scripts/install-native-host.sh YOUR_EXTENSION_ID chrome
-```
-
-On Windows, run `scripts/install-native-host.ps1` from PowerShell. The native host is a thin bridge to the local broker and can start a locked broker if the login service is not already running. The installer records the Silo CLI path for the extension's **Open Silo** action.
-
-Rust concepts to notice:
-
-- `struct` models a vault entry.
-- `enum` models commands and field choices.
-- `Result<T, E>` makes failure explicit.
-- `Option<T>` represents optional TOTP data.
-- `&mut` gives a function permission to edit an entry.
-- `derive` generates repetitive implementations such as CLI parsing and serialization.
+Run `silo --help` or `silo <command> --help` for the complete command reference.
 
 ## Build and verify from source
 
-The `cargo` commands below are for contributors building the repository. Users installing a published release do not need Rust or Cargo.
-
 ```bash
-cargo fmt --all
+cargo fmt --all --check
 cargo test --workspace
-cargo run -p silo -- --help
-```
-
-The same checks are available through `sh scripts/verify.sh`. Packaging checks are run with `sh scripts/test-packaging.sh`. Dependency audits run in CI with `cargo-audit`; fuzz targets live in `fuzz/` and require the nightly toolchain:
-
-```bash
-cargo install cargo-fuzz
-rustup toolchain install nightly
-cd fuzz
-cargo +nightly fuzz run totp_input -- -max_total_time=60
-cargo +nightly fuzz run vault_file -- -max_total_time=60
-```
-
-Tagged releases are built for Linux, macOS, and Windows. The release workflow signs each SHA-256 checksum with Cosign. Configure `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` repository secrets, then verify release signatures with Silo's published public key.
-
-Browser checks require Node.js and Playwright:
-
-```bash
+sh scripts/verify.sh
+sh scripts/test-packaging.sh
 sh scripts/browser-smoke.sh
 ```
 
-The smoke test loads the unpacked extension in Chromium and verifies the popup search field and explicit approval flow. The Rust integration test starts a temporary broker and native host and verifies login, TOTP, save-login, locking, expiry, domain matching, and token rejection.
+Fuzz targets for vault and TOTP input live in [`fuzz`](./fuzz).
 
-Silo is pre-release software and has not undergone an independent security audit. Do not use it as your only password manager for important accounts until memory handling, backups, lock behavior, browser integration, update signing, and security testing are complete.
+## Documentation
+
+- [Architecture](./docs/_posts/2026-08-05-silo-architecture.md)
+- [Secret lifecycle hardening](./docs/_posts/2026-08-02-secret-lifecycle-hardening.md)
+- [Building the tray companion](./docs/_posts/2026-08-03-building-silo-tray.md)
+- [Importing passwords](./docs/_posts/2026-08-04-importing-passwords-into-silo.md)
+- [Security hardening](./docs/security-hardening.md)
+
+## Security notice
+
+Silo is pre-release software and has not undergone an independent security audit. Do not use it as the only password manager for important accounts until its memory handling, backups, locking behaviour, browser integration, update path, and security testing have been independently reviewed.
+
+## License
+
+MIT
